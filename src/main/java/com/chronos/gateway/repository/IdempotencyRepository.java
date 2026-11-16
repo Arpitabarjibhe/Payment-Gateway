@@ -13,11 +13,7 @@ import java.util.Optional;
 @Repository
 public interface IdempotencyRepository extends JpaRepository<IdempotencyRecord, Long> {
 
-    Optional<IdempotencyRecord> findByKeyAndMerchantId(String key, String merchantId);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM IdempotencyRecord r WHERE r.key = :key AND r.merchantId = :merchantId")
     Optional<IdempotencyRecord> findByKeyAndMerchantIdForUpdate(@Param("key") String key, @Param("merchantId") String merchantId);
-
-    void deleteByKeyAndMerchantId(String key, String merchantId);
 }

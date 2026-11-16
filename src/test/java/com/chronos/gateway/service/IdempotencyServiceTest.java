@@ -21,7 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("Unit Tests - Idempotency Service with Pessimistic Locking & Stale Lease Recovery")
+@DisplayName("Unit Tests - Idempotency Service with Pessimistic Locking")
 class IdempotencyServiceTest {
 
     @Mock
@@ -47,7 +47,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    @DisplayName("Lock acquisition: Saves PROCESSING record with 60s lease for new key")
+    @DisplayName("Lock acquisition: Saves PROCESSING record for new key")
     void testCheckOrLockNewKey() {
         when(idempotencyRepository.findByKeyAndMerchantIdForUpdate(KEY, MERCHANT_ID)).thenReturn(Optional.empty());
 
@@ -68,7 +68,6 @@ class IdempotencyServiceTest {
                 .responseCode(201)
                 .responseBody("{\"id\": \"pi_123\"}")
                 .createdAt(Instant.now())
-                .lockedUntil(Instant.now().plusSeconds(60))
                 .build();
 
         when(idempotencyRepository.findByKeyAndMerchantIdForUpdate(KEY, MERCHANT_ID)).thenReturn(Optional.of(resolvedRecord));
@@ -78,28 +77,6 @@ class IdempotencyServiceTest {
         assertThat(result).isPresent();
         assertThat(result.get().getResponseCode()).isEqualTo(201);
         assertThat(result.get().getResponseBody()).contains("pi_123");
-    }
-
-    @Test
-    @DisplayName("Stale lock recovery: Reclaims lease if worker crashed and lockedUntil expired")
-    void testStaleLockRecovery() {
-        Instant past = Instant.now().minusSeconds(10);
-        IdempotencyRecord crashedRecord = IdempotencyRecord.builder()
-                .key(KEY)
-                .merchantId(MERCHANT_ID)
-                .requestHash("hash_matching")
-                .status(IdempotencyStatus.PROCESSING)
-                .lockedUntil(past)
-                .build();
-
-        when(idempotencyRepository.findByKeyAndMerchantIdForUpdate(KEY, MERCHANT_ID)).thenReturn(Optional.of(crashedRecord));
-
-        Optional<IdempotencyRecord> result = idempotencyService.checkOrLock(KEY, MERCHANT_ID, "hash_matching");
-
-        // Lock reclaimed successfully!
-        assertThat(result).isEmpty();
-        assertThat(crashedRecord.getLockedUntil()).isAfter(past);
-        verify(idempotencyRepository).saveAndFlush(crashedRecord);
     }
 
     @Test
@@ -127,7 +104,6 @@ class IdempotencyServiceTest {
                 .merchantId(MERCHANT_ID)
                 .requestHash("hash_same")
                 .status(IdempotencyStatus.PROCESSING)
-                .lockedUntil(Instant.now().plusSeconds(30)) // Active lease
                 .build();
 
         when(idempotencyRepository.findByKeyAndMerchantIdForUpdate(KEY, MERCHANT_ID)).thenReturn(Optional.of(inFlightRecord));

@@ -12,9 +12,8 @@ When moving money over HTTP, network failures are inevitable: a client sends a c
 
 This project implements:
 1. **Atomic Idempotent Execution:** Payment settlement and idempotency record resolution occur within the same database transaction boundary.
-2. **Lease-Based Stale Lock Recovery:** In-flight locks expire after a 60-second lease window, preventing permanent deadlocks if an application node crashes mid-request.
-3. **Pessimistic Concurrency Control:** Row-level locks (`SELECT ... FOR UPDATE`) serialize competing operations on transaction balances, preventing concurrent over-refunds.
-4. **Append-Only Double-Entry Ledger:** Balances are dynamically derived by summing immutable journal entries ($\sum \text{Debits} == \sum \text{Credits}$) rather than mutating in-place counter columns.
+2. **Pessimistic Concurrency Control:** Row-level locks (`SELECT ... FOR UPDATE`) serialize competing operations on transaction balances, preventing concurrent over-refunds.
+3. **Append-Only Double-Entry Ledger:** Balances are dynamically derived by summing immutable journal entries ($\sum \text{Debits} == \sum \text{Credits}$) rather than mutating in-place counter columns.
 
 ---
 
@@ -43,8 +42,7 @@ This project implements:
          │
          ├── 2. Pessimistic Lock Check on (merchant_id, idempotency_key)
          │        ├── If RESOLVED: Return cached receipt immediately
-         │        ├── If PROCESSING & Lease Active: Throw 409 Conflict
-         │        └── If PROCESSING & Lease Expired: Reclaim stale lease
+         │        └── If PROCESSING: Throw 409 Conflict
          │
          ├── 3. Card Network Simulation (Deterministic processor rules)
          │
@@ -63,6 +61,10 @@ This project implements:
 
 ---
 
+> **No lease/stale-lock mechanism is needed** because the idempotency record is inserted and resolved in the same transaction as the payment; a crash rolls back both. Concurrent duplicates serialize on the `(merchant_id, idempotency_key)` unique constraint and receive 409.
+
+---
+
 ## 4. Design Decisions & Trade-Offs
 
 ### A. Single-Transaction Atomicity vs. Separate Lock Transactions
@@ -73,15 +75,11 @@ This project implements:
 * **Decision:** Refunds acquire a pessimistic write lock on the target `PaymentIntent` row before calculating the unrefunded balance.
 * **Trade-off:** Pessimistic locking introduces short transaction lock contention if multiple refunds are issued against the same payment simultaneously. However, payment refunds are low-frequency operations per transaction, and row locking guarantees mathematical safety against concurrent over-refund race conditions.
 
-### C. Lease-Based Stale Lock Recovery
-* **Decision:** In-flight locks write a 60-second lease timestamp (`locked_until`). Competing requests inspect this lease under row-level lock.
-* **Why:** If an application node crashes or restarts midway through processing, an unleased lock stays in `PROCESSING` state permanently, blocking client retries indefinitely. With lease expiration, subsequent retries safely reclaim the lease after 60 seconds.
-
-### D. Integer Cents vs. Floating-Point Numbers
+### C. Integer Cents vs. Floating-Point Numbers
 * **Decision:** All monetary amounts are represented as 64-bit integers (`Long amount`) in the smallest currency unit (e.g. 5000 = $50.00).
 * **Why:** IEEE-754 floating-point arithmetic introduces precision loss and binary approximation errors (e.g. `0.1 + 0.2 = 0.30000000000000004`), which can cause cumulative ledger discrepancies over millions of transactions.
 
-### E. Derived Balances vs. Mutable In-Place Counters
+### D. Derived Balances vs. Mutable In-Place Counters
 * **Decision:** Account balances are dynamically computed by aggregating historical journal entries (`Assets = Debits - Credits`; `Liabilities = Credits - Debits`).
 * **Trade-off:** Deriving balances on the fly requires aggregate database queries rather than simple single-row lookups. For a high-throughput production ledger, snapshots/checkpoints would be introduced periodically. The benefit is complete auditability and mathematical provability: balances cannot be secretly modified or corrupted by rogue `UPDATE` statements.
 
@@ -230,7 +228,6 @@ mvn test
 * **`testConcurrentIdempotencyStorm`:** Fires 10 concurrent threads against a single idempotency key simultaneously. Asserts that exactly 1 charge is created and 1 set of ledger postings is recorded.
 * **`testConcurrentRefundRaceProtection`:** Fires 2 concurrent threads attempting to refund \$50 each on a \$50 charge. Asserts that pessimistic row locks serialize execution so exactly 1 succeeds and the competing request is rejected with `422 Unprocessable Entity`.
 * **`testMultiMerchantIdempotencyIsolation`:** Asserts that Merchant A and Merchant B using identical keys (`shared_key_101`) do not collide and execute independently.
-* **`testStaleLockRecovery`:** Simulates an expired worker lease and verifies that subsequent retries safely reclaim the lease.
 * **`testIdempotencyPayloadConflict`:** Asserts that reusing a key with altered parameters returns `400 Bad Request`.
 
 ---

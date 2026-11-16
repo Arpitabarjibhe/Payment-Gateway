@@ -44,16 +44,10 @@ public class IdempotencyRecord {
     @Column(nullable = false)
     private Instant createdAt;
 
-    @Column(nullable = false)
-    private Instant lockedUntil;
-
     @PrePersist
     public void onPrePersist() {
         if (this.createdAt == null) {
             this.createdAt = Instant.now();
-        }
-        if (this.lockedUntil == null) {
-            this.lockedUntil = Instant.now().plusSeconds(60); // 60s lease
         }
     }
 }

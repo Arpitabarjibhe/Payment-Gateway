@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 
@@ -24,7 +23,6 @@ import java.util.Optional;
 public class IdempotencyService {
 
     private final IdempotencyRepository idempotencyRepository;
-    public static final long LOCK_LEASE_SECONDS = 60;
 
     public String computePayloadHash(String payload) {
         if (payload == null) {
@@ -41,10 +39,10 @@ public class IdempotencyService {
 
     /**
      * Checks for an existing key using a pessimistic row lock (SELECT ... FOR UPDATE)
-     * to eliminate concurrent stale-lease reclamation races.
+     * to serialize concurrent duplicate requests on the unique constraint.
      * Returns an Optional containing:
      * - A resolved record (replay cached response)
-     * - An empty optional (new lock acquired or stale lease successfully reclaimed)
+     * - An empty optional (new record inserted; caller may proceed)
      */
     @Transactional
     public Optional<IdempotencyRecord> checkOrLock(String key, String merchantId, String payloadHash) {
@@ -52,7 +50,7 @@ public class IdempotencyService {
             return Optional.empty();
         }
 
-        // Pessimistic write lock ensures only one competing worker can inspect or reclaim an existing record
+        // Pessimistic write lock ensures only one competing worker can inspect an existing record
         Optional<IdempotencyRecord> existingOpt = idempotencyRepository.findByKeyAndMerchantIdForUpdate(key, merchantId);
 
         if (existingOpt.isPresent()) {
@@ -70,27 +68,17 @@ public class IdempotencyService {
                 return Optional.of(record);
             }
 
-            // 3. Stale lock recovery with row-level lock: safe from concurrent retry races
-            if (Instant.now().isAfter(record.getLockedUntil())) {
-                log.warn("Reclaiming stale lock on idempotency key '{}' (lease expired at {})", key, record.getLockedUntil());
-                record.setLockedUntil(Instant.now().plusSeconds(LOCK_LEASE_SECONDS));
-                idempotencyRepository.saveAndFlush(record);
-                return Optional.empty(); // Lock successfully reclaimed
-            }
-
-            // 4. In-flight collision: reject concurrent race
+            // 3. In-flight collision: reject concurrent race
             throw new ConcurrentRequestException(
                     "A request with the idempotency key '" + key + "' is currently in progress. Please retry shortly.");
         }
 
-        // Lock new key with lease
+        // Insert new PROCESSING record; unique constraint guards against concurrent inserts
         IdempotencyRecord newRecord = IdempotencyRecord.builder()
                 .key(key)
                 .merchantId(merchantId)
                 .requestHash(payloadHash)
                 .status(IdempotencyStatus.PROCESSING)
-                .createdAt(Instant.now())
-                .lockedUntil(Instant.now().plusSeconds(LOCK_LEASE_SECONDS))
                 .build();
 
         try {
@@ -121,10 +109,4 @@ public class IdempotencyService {
         });
     }
 
-    @Transactional
-    public void unlockOnError(String key, String merchantId) {
-        if (key != null && !key.isBlank()) {
-            idempotencyRepository.deleteByKeyAndMerchantId(key, merchantId);
-        }
-    }
 }

@@ -381,6 +381,36 @@ public class PaymentIntegrationTest {
     }
 
     @Test
+    @DisplayName("Atomicity: Idempotency record is RESOLVED (not PROCESSING) after a successful payment commit")
+    void testIdempotencyRecordResolvedAtomically() throws Exception {
+        String idempotencyKey = "atomic_key_" + System.currentTimeMillis();
+        CreatePaymentRequest request = CreatePaymentRequest.builder()
+                .amount(1000L)
+                .currency("usd")
+                .cardNumber("4242424242424242")
+                .confirm(true)
+                .build();
+
+        String payload = objectMapper.writeValueAsString(request);
+
+        // First call: should succeed and atomically commit payment + RESOLVED idempotency record
+        mockMvc.perform(post("/v1/payments")
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated());
+
+        // Replay: if the record is RESOLVED (not PROCESSING), this returns 201 with Idempotent-Replayed: true
+        // If the transaction had not committed atomically, the record would still be PROCESSING → 409
+        mockMvc.perform(post("/v1/payments")
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replayed", "true"));
+    }
+
+    @Test
     @DisplayName("Concurrency: Simultaneous refund race condition is blocked by pessimistic row locking")
     void testConcurrentRefundRaceProtection() throws Exception {
         // 1. Create a $50.00 payment
