@@ -10,7 +10,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +21,6 @@ import java.util.List;
 @RequestMapping("/v1/payments")
 @CrossOrigin(origins = "*")
 @RequiredArgsConstructor
-@Slf4j
 public class PaymentController {
 
     private final PaymentService paymentService;
@@ -37,12 +35,7 @@ public class PaymentController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-Merchant-Id", required = false, defaultValue = DEFAULT_MERCHANT) String merchantId) {
 
-        String payloadHash = "";
-        try {
-            payloadHash = idempotencyService.computePayloadHash(objectMapper.writeValueAsString(request));
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize request for hashing", e);
-        }
+        String payloadHash = computeRequestHash(request);
 
         // Single atomic transaction: payment settlement + idempotency resolution commit together
         PaymentService.PaymentResult result = paymentService.processIdempotentPayment(request, merchantId, idempotencyKey, payloadHash);
@@ -85,12 +78,7 @@ public class PaymentController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-Merchant-Id", required = false, defaultValue = DEFAULT_MERCHANT) String merchantId) {
 
-        String payloadHash = "";
-        try {
-            payloadHash = idempotencyService.computePayloadHash(objectMapper.writeValueAsString(request != null ? request : "{}"));
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize refund request for hashing", e);
-        }
+        String payloadHash = computeRequestHash(request != null ? request : "{}");
 
         PaymentService.RefundResult result = paymentService.processIdempotentRefund(id, request, merchantId, idempotencyKey, payloadHash);
 
@@ -102,5 +90,13 @@ public class PaymentController {
         }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(result.refund());
+    }
+
+    private String computeRequestHash(Object request) {
+        try {
+            return idempotencyService.computePayloadHash(objectMapper.writeValueAsString(request));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize request for idempotency hashing", e);
+        }
     }
 }

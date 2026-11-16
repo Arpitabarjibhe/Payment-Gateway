@@ -56,6 +56,13 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("invalid_request_error", msg, "parameter_invalid"));
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex) {
+        log.error("Internal gateway error", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of("api_error", "An internal error occurred in the gateway", "internal_error"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
         log.error("Unhandled internal server error", ex);
