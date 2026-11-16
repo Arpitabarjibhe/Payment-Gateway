@@ -6,6 +6,10 @@ import com.chronos.gateway.dto.RefundRequest;
 import com.chronos.gateway.model.PaymentIntent;
 import com.chronos.gateway.model.PaymentStatus;
 import com.chronos.gateway.model.Refund;
+import com.chronos.gateway.repository.IdempotencyRepository;
+import com.chronos.gateway.repository.LedgerEntryRepository;
+import com.chronos.gateway.repository.PaymentIntentRepository;
+import com.chronos.gateway.service.CardSimulator;
 import com.chronos.gateway.service.LedgerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -43,6 +48,18 @@ public class PaymentIntegrationTest {
 
     @Autowired
     private LedgerService ledgerService;
+
+    @Autowired
+    private IdempotencyRepository idempotencyRepository;
+
+    @Autowired
+    private PaymentIntentRepository paymentIntentRepository;
+
+    @Autowired
+    private LedgerEntryRepository ledgerEntryRepository;
+
+    @SpyBean
+    private CardSimulator cardSimulator;
 
     @Test
     @DisplayName("Positive: End-to-end charge card and settle balanced ledger entries")
@@ -462,5 +479,106 @@ public class PaymentIntegrationTest {
         // Exactly 1 refund succeeded; the competing refund was blocked by pessimistic lock and rejected with 422
         assertThat(successCount.get()).isEqualTo(1);
         assertThat(rejectedCount.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Concurrency: 10 simultaneous payments for a brand-new merchant all return 201 and reconciliation balances")
+    void testConcurrentNewMerchantAccountCreation() throws Exception {
+        String newMerchantId = "merch_new_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        CreatePaymentRequest request = CreatePaymentRequest.builder()
+                .amount(1000L)
+                .currency("eur")
+                .cardNumber("4242424242424242")
+                .confirm(true)
+                .build();
+        String payload = objectMapper.writeValueAsString(request);
+
+        int threads = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch latch = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threads);
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        for (int i = 0; i < threads; i++) {
+            executor.submit(() -> {
+                try {
+                    latch.await();
+                    MvcResult res = mockMvc.perform(post("/v1/payments")
+                                    .header("X-Merchant-Id", newMerchantId)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(payload))
+                            .andReturn();
+                    if (res.getResponse().getStatus() == 201) successCount.incrementAndGet();
+                } catch (Exception ignored) {
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        latch.countDown();
+        done.await();
+        executor.shutdown();
+
+        // All 10 payments must succeed (each uses a different request, no idempotency key)
+        assertThat(successCount.get()).isEqualTo(10);
+
+        // Reconciliation for this merchant must be balanced
+        mockMvc.perform(get("/v1/ledger/reconciliation")
+                        .param("merchant_id", newMerchantId)
+                        .param("currency", "eur"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.is_balanced").value(true));
+    }
+
+    @Test
+    @DisplayName("Rollback: Failure after idempotency insert rolls back idempotency, payment, and ledger rows; retry succeeds")
+    void testAtomicRollbackOnProcessingFailure() throws Exception {
+        String idempotencyKey = "rollback_key_" + System.currentTimeMillis();
+        String merchantId = "merch_rollback";
+        CreatePaymentRequest request = CreatePaymentRequest.builder()
+                .amount(5000L)
+                .currency("usd")
+                .cardNumber("4242424242424242")
+                .confirm(true)
+                .build();
+        String payload = objectMapper.writeValueAsString(request);
+
+        // Make cardSimulator throw after idempotency record is inserted in checkOrLock
+        org.mockito.Mockito.doThrow(new RuntimeException("Simulated processing crash"))
+                .when(cardSimulator).evaluateCard(org.mockito.ArgumentMatchers.any());
+
+        try {
+            mockMvc.perform(post("/v1/payments")
+                            .header("Idempotency-Key", idempotencyKey)
+                            .header("X-Merchant-Id", merchantId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(payload))
+                    .andExpect(status().isInternalServerError());
+        } finally {
+            org.mockito.Mockito.reset(cardSimulator);
+        }
+
+        // Assert NO idempotency row exists
+        assertThat(idempotencyRepository.findAll().stream().anyMatch(r -> idempotencyKey.equals(r.getKey()))).isFalse();
+
+        // Assert NO payment rows exist for this merchant
+        assertThat(paymentIntentRepository.findByMerchantIdOrderByCreatedAtDesc(merchantId)).isEmpty();
+
+        // Retry with the exact same idempotency key succeeds exactly once
+        MvcResult retryResult = mockMvc.perform(post("/v1/payments")
+                        .header("Idempotency-Key", idempotencyKey)
+                        .header("X-Merchant-Id", merchantId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andReturn();
+
+        PaymentIntent payment = objectMapper.readValue(retryResult.getResponse().getContentAsString(), PaymentIntent.class);
+
+        // Assert exactly 1 payment row and 3 ledger entries exist
+        assertThat(paymentIntentRepository.findByMerchantIdOrderByCreatedAtDesc(merchantId)).hasSize(1);
+        assertThat(ledgerEntryRepository.findByTransactionId(payment.getId())).hasSize(3);
+        assertThat(idempotencyRepository.findAll().stream().anyMatch(r -> idempotencyKey.equals(r.getKey()))).isTrue();
     }
 }

@@ -21,6 +21,7 @@ public class LedgerService {
 
     private final LedgerAccountRepository accountRepository;
     private final LedgerEntryRepository entryRepository;
+    private final LedgerAccountUpsertService ledgerAccountUpsertService;
 
     public static final String DEFAULT_MERCHANT = "merch_default";
     public static final String DEFAULT_CURRENCY = "usd";
@@ -54,16 +55,20 @@ public class LedgerService {
         return id;
     }
 
-    private synchronized void createAccountIfAbsent(String id, String merchantId, String name, String currency, AccountType type) {
+    private void createAccountIfAbsent(String id, String merchantId, String name, String currency, AccountType type) {
         if (!accountRepository.existsById(id)) {
-            accountRepository.save(LedgerAccount.builder()
-                    .id(id)
-                    .merchantId(merchantId)
-                    .name(name)
-                    .currency(currency.toLowerCase())
-                    .type(type)
-                    .createdAt(Instant.now())
-                    .build());
+            try {
+                ledgerAccountUpsertService.tryInsert(LedgerAccount.builder()
+                        .id(id)
+                        .merchantId(merchantId)
+                        .name(name)
+                        .currency(currency.toLowerCase())
+                        .type(type)
+                        .createdAt(Instant.now())
+                        .build());
+            } catch (Exception ex) {
+                log.debug("Concurrent account creation race for account {}: {}", id, ex.getMessage());
+            }
         }
     }
 
