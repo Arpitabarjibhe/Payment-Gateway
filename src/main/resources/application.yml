@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 spring:
   application:
@@ -9,6 +9,8 @@ spring:
     driverClassName: org.h2.Driver
     username: sa
     password: ""
+    hikari:
+      maximum-pool-size: 30
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
@@ -25,3 +27,9 @@ spring:
 logging:
   level:
     com.chronos.gateway: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

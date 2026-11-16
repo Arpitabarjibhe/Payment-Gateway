@@ -4,6 +4,8 @@ A deterministic financial transaction processing gateway and double-entry ledger
 
 Designed from first principles to address core distributed systems challenges in payments: network retry duplication, concurrent refund race conditions, and ledger reconciliation invariants.
 
+**Live demo:** TODO-add-url-after-deploy
+
 ---
 
 ## 1. What This Project Is About
@@ -229,6 +231,26 @@ mvn test
 * **`testConcurrentRefundRaceProtection`:** Fires 2 concurrent threads attempting to refund \$50 each on a \$50 charge. Asserts that pessimistic row locks serialize execution so exactly 1 succeeds and the competing request is rejected with `422 Unprocessable Entity`.
 * **`testMultiMerchantIdempotencyIsolation`:** Asserts that Merchant A and Merchant B using identical keys (`shared_key_101`) do not collide and execute independently.
 * **`testIdempotencyPayloadConflict`:** Asserts that reusing a key with altered parameters returns `400 Bad Request`.
+
+---
+
+## Deploying
+
+### Required Environment Variables
+
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | JDBC URL of the PostgreSQL database | `jdbc:postgresql://host:5432/paymentdb` |
+| `DATABASE_USERNAME` | Database user | `payment_user` |
+| `DATABASE_PASSWORD` | Database password | *(secret)* |
+| `SPRING_PROFILES_ACTIVE` | Must be `prod` for production | `prod` |
+| `PORT` | (Optional) HTTP port; defaults to `8080` | `8080` |
+| `HIBERNATE_DDL_AUTO` | (Optional) Schema management; defaults to `update` | `validate` |
+
+> [!IMPORTANT]
+> Database migrations via Flyway are future work. Use `HIBERNATE_DDL_AUTO=update` or `create-drop` for now — do not use `validate` on a fresh database.
+
+**Live demo:** TODO-add-url-after-deploy
 
 ---
 

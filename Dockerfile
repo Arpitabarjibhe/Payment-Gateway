@@ -21,6 +21,9 @@ USER appuser
 # Copy the built jar artifact
 COPY --from=builder /app/target/payment-gateway-1.0.0.jar app.jar
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
+  CMD wget -qO- http://localhost:${PORT:-8080}/actuator/health || exit 1
+
 EXPOSE 8080
 
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
