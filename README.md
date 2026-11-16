@@ -1,5 +1,7 @@
 # Payment Gateway & Transaction Settlement Engine
 
+[![CI](https://github.com/Arpitabarjibhe/Payment-Gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Arpitabarjibhe/Payment-Gateway/actions/workflows/ci.yml)
+
 A deterministic financial transaction processing gateway and double-entry ledger engine built with **Java 21** and **Spring Boot 3**.
 
 Designed from first principles to address core distributed systems challenges in payments: network retry duplication, concurrent refund race conditions, and ledger reconciliation invariants.
@@ -26,6 +28,8 @@ This project implements:
 * **Concurrency-Safe Refunds:** Full and partial refunds enforce balance validation under row-level database locks, and natively support idempotency keys.
 * **Deterministic Card Network Simulator:** Simulates bank processor responses based on card number suffixes (`4242` approved, `0002` insufficient funds, `0005` card declined, `0001` expired).
 * **Interactive Simulation Console:** A single-page dashboard at `http://localhost:8080` to simulate multi-threaded packet storms, test card decline paths, inspect live ledger postings, and audit system reconciliation in real time.
+  
+  Screenshot: TODO
 
 ---
 
@@ -93,11 +97,14 @@ To keep this project focused and self-contained, the following areas were delibe
 
 | Area | Current Implementation | Production Target |
 | :--- | :--- | :--- |
-| **Authentication** | `X-Merchant-Id` header (defaults to `merch_default`) | API Gateway with mTLS and cryptographically signed bearer tokens (`sk_live_...`). |
-| **Card Data Handling** | Mock card numbers evaluated locally | Tokenization via client-side SDKs and PCI-DSS Level 1 compliant card vaults. |
-| **Database Migrations** | Hibernate schema generation | Versioned, repeatable Flyway or Liquibase SQL migrations. |
-| **Ledger Scaling** | Real-time SQL aggregation | Periodic snapshot checkpoints to bound aggregation query times on active accounts. |
-| **Asynchronous Webhooks** | Synchronous REST responses | Transactional Outbox pattern with HMAC signatures and exponential retry workers. |
+| **Authentication** | No authentication — `X-Merchant-Id` is trusted (defaults to `merch_default`). | API Gateway with mTLS and cryptographically signed bearer tokens (`sk_live_...`). |
+| **Payment Confirmation** | `POST /v1/payments/{id}/confirm` has no idempotency-key support; confirmations must not be duplicated by the caller. | Add idempotency key support to the confirmation endpoint. |
+| **Payment Failure Retry** | A `FAILED` payment cannot be retried with a different card; a new `PaymentIntent` is required. | Multi-attempt payment intents allowing card resubmission while retaining the original intent ID. |
+| **Fee Refund Policy** | Refunds do not return the 2% platform fee; full amount is debited from merchant pending. | Configurable fee refund policies (prorated or full fee reversal). |
+| **Card Data Handling** | Mock card numbers evaluated locally. | Tokenization via client-side SDKs and PCI-DSS Level 1 compliant card vaults. |
+| **Database Migrations** | Hibernate schema generation (`update` / `create-drop`). | Versioned, repeatable Flyway or Liquibase SQL migrations. |
+| **Ledger Scaling** | Real-time SQL aggregation. | Periodic snapshot checkpoints to bound aggregation query times on active accounts. |
+| **Asynchronous Webhooks** | Synchronous REST responses. | Transactional Outbox pattern with HMAC signatures and exponential retry workers. |
 
 ---
 
@@ -220,7 +227,7 @@ GET /v1/ledger/reconciliation?currency=usd&merchant_id=merch_default
 
 ## 8. Verification & Test Suite
 
-The test suite contains **31 automated tests** covering positive paths, edge cases, and concurrency:
+The test suite contains **38 automated tests** covering positive paths, edge cases, and concurrency:
 
 ```bash
 mvn test
@@ -229,12 +236,18 @@ mvn test
 ### Key Test Cases Verified:
 * **`testConcurrentIdempotencyStorm`:** Fires 10 concurrent threads against a single idempotency key simultaneously. Asserts that exactly 1 charge is created and 1 set of ledger postings is recorded.
 * **`testConcurrentRefundRaceProtection`:** Fires 2 concurrent threads attempting to refund \$50 each on a \$50 charge. Asserts that pessimistic row locks serialize execution so exactly 1 succeeds and the competing request is rejected with `422 Unprocessable Entity`.
+* **`testAtomicRollbackOnProcessingFailure`:** Simulates a processing failure after idempotency record insertion; asserts that the entire transaction rolls back (no idempotency, payment, or ledger rows remain) and a subsequent retry with the same key succeeds cleanly.
+* **`testConcurrentNewMerchantAccountCreation`:** Fires 10 concurrent threads creating first-time payments for a brand-new merchant simultaneously; asserts that ledger accounts are created safely via `REQUIRES_NEW` transactions without duplicate-key errors and the merchant's ledger balances.
 * **`testMultiMerchantIdempotencyIsolation`:** Asserts that Merchant A and Merchant B using identical keys (`shared_key_101`) do not collide and execute independently.
 * **`testIdempotencyPayloadConflict`:** Asserts that reusing a key with altered parameters returns `400 Bad Request`.
+* **`PostgresIntegrationTest`:** Dedicated Testcontainers suite validating PostgreSQL row locking, JSON replay on `TEXT` columns, and concurrent refund serialization against a live PostgreSQL 16 container.
+
+### Concurrency Testing: H2 vs. PostgreSQL (Testcontainers)
+Unit and baseline integration tests run against an in-memory H2 database in PostgreSQL compatibility mode for instant feedback during local development and non-Docker environments. Critical multi-threaded concurrency invariants—including concurrent idempotency storms (10 threads), concurrent refund races with pessimistic row locking (2 threads), PostgreSQL `TEXT` column JSON replay caching, and simultaneous first-ever merchant account creation—are verified against a real PostgreSQL 16 container via Testcontainers in CI.
 
 ---
 
-## Deploying
+## 9. Deploying
 
 ### Required Environment Variables
 
@@ -250,11 +263,9 @@ mvn test
 > [!IMPORTANT]
 > Database migrations via Flyway are future work. Use `HIBERNATE_DDL_AUTO=update` or `create-drop` for now — do not use `validate` on a fresh database.
 
-**Live demo:** TODO-add-url-after-deploy
-
 ---
 
-## 9. Running Locally & Container Deployment
+## 10. Running Locally & Container Deployment
 
 ### Local Development (Zero-Config In-Memory Database)
 ```bash
