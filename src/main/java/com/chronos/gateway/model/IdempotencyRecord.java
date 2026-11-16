@@ -34,7 +34,6 @@ public class IdempotencyRecord {
 
     private Integer responseCode;
 
-    @Lob
     @Column(columnDefinition = "TEXT")
     private String responseBody;
 
