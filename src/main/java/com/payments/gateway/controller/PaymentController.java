@@ -29,6 +29,12 @@ public class PaymentController {
 
     public static final String DEFAULT_MERCHANT = "merch_default";
 
+    private record RefundIdempotencyPayload(
+            String operation,
+            String paymentId,
+            RefundRequest request
+    ) {}
+
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createPayment(
             @Valid @RequestBody CreatePaymentRequest request,
@@ -78,7 +84,9 @@ public class PaymentController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-Merchant-Id", required = false, defaultValue = DEFAULT_MERCHANT) String merchantId) {
 
-        String payloadHash = computeRequestHash(request != null ? request : "{}");
+        String payloadHash = computeRequestHash(
+            new RefundIdempotencyPayload("refund", id, request)
+        );
 
         PaymentService.RefundResult result = paymentService.processIdempotentRefund(id, request, merchantId, idempotencyKey, payloadHash);
 

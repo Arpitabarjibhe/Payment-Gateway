@@ -29,35 +29,46 @@ public class LedgerController {
         return ResponseEntity.ok(ledgerService.getEntriesForTransaction(transactionId));
     }
 
-    /**
-     * Ledger Health & Invariant Check.
-     * Verifies that total customer funds in transit equal merchant pending + platform fees.
-     */
     @GetMapping("/reconciliation")
-    public ResponseEntity<Map<String, Object>> getReconciliationReport(
-            @RequestParam(value = "merchant_id", required = false, defaultValue = LedgerService.DEFAULT_MERCHANT) String merchantId,
-            @RequestParam(value = "currency", required = false, defaultValue = LedgerService.DEFAULT_CURRENCY) String currency) {
+public ResponseEntity<Map<String, Object>> getReconciliationReport(
+        @RequestParam(value = "currency", required = false,
+                defaultValue = LedgerService.DEFAULT_CURRENCY) String currency) {
 
-        String cashAcc = ledgerService.getOrCreateCustomerCashAccount(currency);
-        String merchAcc = ledgerService.getOrCreateMerchantPendingAccount(merchantId, currency);
-        String feeAcc = ledgerService.getOrCreatePlatformFeesAccount(currency);
+    String cur = currency.toLowerCase();
 
-        AccountBalanceResponse cash = ledgerService.getAccountBalance(cashAcc);
-        AccountBalanceResponse merchant = ledgerService.getAccountBalance(merchAcc);
-        AccountBalanceResponse fees = ledgerService.getAccountBalance(feeAcc);
+    // 1. Fetch shared global accounts
+    String cashAcc = ledgerService.getOrCreateCustomerCashAccount(cur);
+    String feeAcc = ledgerService.getOrCreatePlatformFeesAccount(cur);
 
-        long totalAssets = cash.getSettledBalance();
-        long totalLiabilitiesAndRevenue = merchant.getSettledBalance() + fees.getSettledBalance();
-        boolean isBalanced = (totalAssets == totalLiabilitiesAndRevenue);
+    AccountBalanceResponse cash =
+            ledgerService.getAccountBalance(cashAcc);
 
-        return ResponseEntity.ok(Map.of(
-                "is_balanced", isBalanced,
-                "currency", currency,
-                "merchant_id", merchantId,
-                "assets_customer_cash", totalAssets,
-                "liabilities_merchant_pending", merchant.getSettledBalance(),
-                "revenue_platform_fees", fees.getSettledBalance(),
-                "discrepancy", totalAssets - totalLiabilitiesAndRevenue
-        ));
-    }
+    AccountBalanceResponse fees =
+            ledgerService.getAccountBalance(feeAcc);
+
+    // 2. Aggregate pending balances across ALL merchants
+    long totalMerchantPending =
+            ledgerService.getTotalMerchantPendingBalance(cur);
+
+    // 3. Verify the accounting equation
+    long totalAssets = cash.getSettledBalance();
+
+    long totalLiabilitiesAndRevenue =
+            totalMerchantPending + fees.getSettledBalance();
+
+    long discrepancy = totalAssets - totalLiabilitiesAndRevenue;
+
+    boolean isBalanced = discrepancy == 0;
+
+    return ResponseEntity.ok(Map.of(
+            "is_balanced", isBalanced,
+            "scope", "global",
+            "currency", cur,
+            "assets_customer_cash", totalAssets,
+            "liabilities_merchant_pending", totalMerchantPending,
+            "revenue_platform_fees", fees.getSettledBalance(),
+            "discrepancy", discrepancy
+    ));
+}
+    
 }

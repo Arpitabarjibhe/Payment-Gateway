@@ -200,6 +200,30 @@ public class LedgerService {
     }
 
     @Transactional(readOnly = true)
+public long getTotalMerchantPendingBalance(String currency) {
+
+    String cur = currency != null
+            ? currency.toLowerCase()
+            : DEFAULT_CURRENCY;
+
+    List<LedgerAccount> merchantAccounts =
+            accountRepository.findByCurrencyAndTypeAndIdStartingWith(
+                    cur,
+                    AccountType.LIABILITY,
+                    "acc_merchant_"
+            );
+
+    long totalBalance = 0;
+
+    for (LedgerAccount account : merchantAccounts) {
+        AccountBalanceResponse balance = getAccountBalance(account.getId());
+        totalBalance += balance.getSettledBalance();
+    }
+
+    return totalBalance;
+}
+
+    @Transactional(readOnly = true)
     public List<LedgerEntry> getEntriesForTransaction(String transactionId) {
         return entryRepository.findByTransactionId(transactionId);
     }

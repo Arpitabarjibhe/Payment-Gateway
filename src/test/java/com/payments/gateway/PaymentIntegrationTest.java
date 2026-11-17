@@ -84,11 +84,11 @@ public class PaymentIntegrationTest {
 
         // Verify ledger invariant: Assets == Liabilities + Revenue
         AccountBalanceResponse cash = ledgerService.getAccountBalance(ledgerService.getOrCreateCustomerCashAccount("usd"));
-        AccountBalanceResponse merchant = ledgerService.getAccountBalance(ledgerService.getOrCreateMerchantPendingAccount(LedgerService.DEFAULT_MERCHANT, "usd"));
+        long totalMerchantPending = ledgerService.getTotalMerchantPendingBalance("usd");
         AccountBalanceResponse fees = ledgerService.getAccountBalance(ledgerService.getOrCreatePlatformFeesAccount("usd"));
 
         assertThat(cash.getSettledBalance()).isGreaterThanOrEqualTo(5000L);
-        assertThat(cash.getSettledBalance()).isEqualTo(merchant.getSettledBalance() + fees.getSettledBalance());
+        assertThat(cash.getSettledBalance()).isEqualTo(totalMerchantPending + fees.getSettledBalance());
     }
 
     @Test
@@ -361,6 +361,43 @@ public class PaymentIntegrationTest {
     }
 
     @Test
+@DisplayName("Reconciliation: Global balances include pending accounts from multiple merchants")
+void testGlobalReconciliationAcrossMerchants() throws Exception {
+
+    CreatePaymentRequest request = CreatePaymentRequest.builder()
+            .amount(5000L)
+            .currency("usd")
+            .cardNumber("4242424242424242")
+            .confirm(true)
+            .build();
+
+    String payload = objectMapper.writeValueAsString(request);
+
+    // Create a payment for Merchant A
+    mockMvc.perform(post("/v1/payments")
+                    .header("X-Merchant-Id", "reconciliation_merchant_a")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(payload))
+            .andExpect(status().isCreated());
+
+    // Create a payment for Merchant B
+    mockMvc.perform(post("/v1/payments")
+                    .header("X-Merchant-Id", "reconciliation_merchant_b")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(payload))
+            .andExpect(status().isCreated());
+
+    // Reconcile all merchants globally
+    mockMvc.perform(get("/v1/ledger/reconciliation")
+                    .param("currency", "usd"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("global"))
+            .andExpect(jsonPath("$.is_balanced").value(true))
+            .andExpect(jsonPath("$.discrepancy").value(0))
+            .andExpect(jsonPath("$.assets_customer_cash").value(10000L));
+}
+
+    @Test
     @DisplayName("Multi-Tenant Isolation: Merchant A and Merchant B using identical key do not collide")
     void testMultiMerchantIdempotencyIsolation() throws Exception {
         String sharedKey = "tenant_iso_key_" + System.currentTimeMillis();
@@ -397,6 +434,82 @@ public class PaymentIntegrationTest {
         assertThat(paymentB.getMerchantId()).isEqualTo("merchant_banana");
     }
 
+    @Test
+@DisplayName("Refund idempotency: Same key cannot replay refund across different payments")
+void testRefundIdempotencyIncludesPaymentId() throws Exception {
+
+    String merchantId = "merchant_refund_fingerprint";
+    String idempotencyKey = "refund_fp_" + System.currentTimeMillis();
+
+    CreatePaymentRequest createRequest = CreatePaymentRequest.builder()
+            .amount(5000L)
+            .currency("usd")
+            .cardNumber("4242424242424242")
+            .confirm(true)
+            .build();
+
+    String paymentPayload = objectMapper.writeValueAsString(createRequest);
+
+    // Create Payment A
+    MvcResult paymentAResult = mockMvc.perform(post("/v1/payments")
+                    .header("X-Merchant-Id", merchantId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(paymentPayload))
+            .andExpect(status().isCreated())
+            .andReturn();
+
+    PaymentIntent paymentA = objectMapper.readValue(
+            paymentAResult.getResponse().getContentAsString(),
+            PaymentIntent.class
+    );
+
+    // Create Payment B
+    MvcResult paymentBResult = mockMvc.perform(post("/v1/payments")
+                    .header("X-Merchant-Id", merchantId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(paymentPayload))
+            .andExpect(status().isCreated())
+            .andReturn();
+
+    PaymentIntent paymentB = objectMapper.readValue(
+            paymentBResult.getResponse().getContentAsString(),
+            PaymentIntent.class
+    );
+
+    assertThat(paymentA.getId()).isNotEqualTo(paymentB.getId());
+
+    RefundRequest refundRequest = new RefundRequest(1000L);
+    String refundPayload = objectMapper.writeValueAsString(refundRequest);
+
+    // First refund: Payment A
+    mockMvc.perform(post("/v1/payments/" + paymentA.getId() + "/refunds")
+                    .header("X-Merchant-Id", merchantId)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refundPayload))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.payment_intent_id").value(paymentA.getId()));
+
+    // Second refund: Payment B, same key and amount.
+    // Must return 400 instead of replaying Payment A's refund.
+    mockMvc.perform(post("/v1/payments/" + paymentB.getId() + "/refunds")
+                    .header("X-Merchant-Id", merchantId)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refundPayload))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error.code").value("idempotency_key_reused"));
+
+    // Retry the original request: Payment A's refund should replay successfully.
+    mockMvc.perform(post("/v1/payments/" + paymentA.getId() + "/refunds")
+                    .header("X-Merchant-Id", merchantId)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refundPayload))
+            .andExpect(status().isCreated())
+            .andExpect(header().string("Idempotent-Replayed", "true"        ));
+        }
+         
     @Test
     @DisplayName("Atomicity: Idempotency record is RESOLVED (not PROCESSING) after a successful payment commit")
     void testIdempotencyRecordResolvedAtomically() throws Exception {
