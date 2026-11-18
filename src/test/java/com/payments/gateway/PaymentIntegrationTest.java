@@ -269,50 +269,50 @@ void testConcurrentIdempotencyStorm() throws Exception {
 
 
         @Test
-        @DisplayName("Refund: Only one refund is allowed per payment")
-        void testOnlyOneRefundPerPayment() throws Exception {
+@DisplayName("Refund: Only one refund is allowed per payment")
+void testOnlyOneRefundPerPayment() throws Exception {
 
-        // Create and confirm a $100 payment
-        CreatePaymentRequest createReq = CreatePaymentRequest.builder()
-                .amount(10000L)
-                .currency("usd")
-                .cardNumber("4242424242424242")
-                .confirm(true)
-                .build();
+    // Create and confirm a $100 payment
+    CreatePaymentRequest createReq = CreatePaymentRequest.builder()
+            .amount(10000L)
+            .currency("usd")
+            .cardNumber("4242424242424242")
+            .confirm(true)
+            .build();
 
-        MvcResult createRes = mockMvc.perform(post("/v1/payments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(createReq)))
-                .andExpect(status().isCreated())
-                .andReturn();
+    MvcResult createRes = mockMvc.perform(post("/v1/payments")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(createReq)))
+            .andExpect(status().isCreated())
+            .andReturn();
 
-        PaymentIntent payment = objectMapper.readValue(
-                createRes.getResponse().getContentAsString(),
-                PaymentIntent.class
-        );
+    PaymentIntent payment = objectMapper.readValue(
+            createRes.getResponse().getContentAsString(),
+            PaymentIntent.class
+    );
 
-        // First refund: $40 — succeeds
-        mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefundRequest(4000L))))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.amount").value(4000))
-                .andExpect(jsonPath("$.status").value("succeeded"));
+    // First refund: Full $100 refund — succeeds
+    mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new RefundRequest(10000L))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.amount").value(10000))
+            .andExpect(jsonPath("$.status").value("succeeded"));
 
-        // Second refund: $60 — rejected, even though $60 remains
-        mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefundRequest(6000L))))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.error.message")
-                        .value("This payment has already been refunded."));
+    // Second refund: Rejected because payment was already refunded
+    mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new RefundRequest(6000L))))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.error.message")
+                    .value("This payment has already been refunded."));
 
-        // Third refund: also rejected
-        mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefundRequest(1000L))))
-                .andExpect(status().isUnprocessableEntity());
-        }
+    // Third refund: Also rejected
+    mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new RefundRequest(1000L))))
+            .andExpect(status().isUnprocessableEntity());
+}
 
     @Test
     @DisplayName("Negative: Refunding a failed payment is rejected with 422")
@@ -503,7 +503,8 @@ void testRefundIdempotencyIncludesPaymentId() throws Exception {
 
     assertThat(paymentA.getId()).isNotEqualTo(paymentB.getId());
 
-    RefundRequest refundRequest = new RefundRequest(1000L);
+    // Both payments are $50, so refund the full $50.
+    RefundRequest refundRequest = new RefundRequest(5000L);
     String refundPayload = objectMapper.writeValueAsString(refundRequest);
 
     // First refund: Payment A
@@ -515,7 +516,7 @@ void testRefundIdempotencyIncludesPaymentId() throws Exception {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.payment_intent_id").value(paymentA.getId()));
 
-    // Second refund: Payment B, same key and amount.
+    // Second refund: Payment B, same key.
     // Must return 400 instead of replaying Payment A's refund.
     mockMvc.perform(post("/v1/payments/" + paymentB.getId() + "/refunds")
                     .header("X-Merchant-Id", merchantId)
@@ -525,15 +526,15 @@ void testRefundIdempotencyIncludesPaymentId() throws Exception {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.error.code").value("idempotency_key_reused"));
 
-    // Retry the original request: Payment A's refund should replay successfully.
+    // Retry original request: Payment A's refund should replay successfully.
     mockMvc.perform(post("/v1/payments/" + paymentA.getId() + "/refunds")
                     .header("X-Merchant-Id", merchantId)
                     .header("Idempotency-Key", idempotencyKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(refundPayload))
             .andExpect(status().isCreated())
-            .andExpect(header().string("Idempotent-Replayed", "true"        ));
-        }
+            .andExpect(header().string("Idempotent-Replayed", "true"));
+}
          
     @Test
     @DisplayName("Atomicity: Idempotency record is RESOLVED (not PROCESSING) after a successful payment commit")
