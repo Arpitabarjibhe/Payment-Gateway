@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -22,40 +25,68 @@
         }
     </script>
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; }
-        code, pre { font-family: 'JetBrains Mono', monospace; }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #090d16; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        code,
+        pre {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #090d16;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 4px;
+        }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen antialiased flex flex-col selection:bg-indigo-500 selection:text-white">
+
+<body
+    class="bg-slate-950 text-slate-100 min-h-screen antialiased flex flex-col selection:bg-indigo-500 selection:text-white">
 
     <!-- Top Navigation Header -->
-    <header class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
+    <header
+        class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
         <div class="flex items-center space-x-4">
-            <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 flex items-center justify-center shadow-lg shadow-indigo-500/25 font-bold text-white text-base tracking-wider">
+            <div
+                class="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 flex items-center justify-center shadow-lg shadow-indigo-500/25 font-bold text-white text-base tracking-wider">
                 P
             </div>
             <div>
                 <div class="flex items-center space-x-2.5">
                     <span class="font-extrabold text-base tracking-tight text-white">PAYMENT GATEWAY</span>
-                    <span class="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Production Core</span>
+                    <span
+                        class="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Production
+                        Core</span>
                 </div>
-                <p class="text-[11px] text-slate-400 font-medium">Core Transaction Processing & Double-Entry Settlement Engine</p>
+                <p class="text-[11px] text-slate-400 font-medium">Core Transaction Processing & Double-Entry Settlement
+                    Engine</p>
             </div>
         </div>
 
         <!-- Ledger Integrity & Action Controls -->
         <div class="flex items-center space-x-3">
-            <div id="reconciliation-pill" class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
+            <div id="reconciliation-pill"
+                class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
                 <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span id="reconciliation-status">Auditing Ledger...</span>
             </div>
 
-            <button id="btn-refresh" onclick="triggerManualRefresh()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-medium text-slate-200 border border-slate-700/80 transition flex items-center space-x-2 shadow-sm">
-                <svg id="refresh-icon" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            <button id="btn-refresh" onclick="triggerManualRefresh()"
+                class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-medium text-slate-200 border border-slate-700/80 transition flex items-center space-x-2 shadow-sm">
+                <svg id="refresh-icon" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-500" fill="none"
+                    stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 <span>Sync</span>
             </button>
@@ -84,8 +115,11 @@
                         <label class="block text-xs font-semibold text-slate-300 mb-1.5">Charge Amount</label>
                         <div class="relative">
                             <span class="absolute left-3.5 top-2.5 text-slate-400 font-mono font-medium">$</span>
-                            <input id="charge-amount" type="number" step="0.50" min="0.50" value="75.00" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-16 py-2.5 text-base font-bold font-mono text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition">
-                            <div class="absolute right-3 top-2.5 px-2 py-0.5 rounded bg-slate-800 text-[10px] font-mono font-semibold text-slate-400">USD</div>
+                            <input id="charge-amount" type="number" step="0.50" min="0.50" value="75.00"
+                                class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-16 py-2.5 text-base font-bold font-mono text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                            <div
+                                class="absolute right-3 top-2.5 px-2 py-0.5 rounded bg-slate-800 text-[10px] font-mono font-semibold text-slate-400">
+                                USD</div>
                         </div>
                     </div>
 
@@ -93,34 +127,42 @@
                     <div>
                         <label class="block text-xs font-semibold text-slate-300 mb-1.5">Test Payment Methods</label>
                         <div class="grid grid-cols-2 gap-2 text-xs">
-                            <button type="button" onclick="setCardPreset('4242424242424242', 'Corporate Visa')" class="preset-btn p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/5 hover:border-indigo-500 text-left transition group">
+                            <button type="button" onclick="setCardPreset('4242424242424242', 'Corporate Visa')"
+                                class="preset-btn p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/5 hover:border-indigo-500 text-left transition group">
                                 <div class="font-semibold text-slate-200 flex items-center justify-between">
                                     <span>•••• 4242</span>
-                                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono">Approve</span>
+                                    <span
+                                        class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono">Approve</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">Corporate Visa</div>
                             </button>
 
-                            <button type="button" onclick="setCardPreset('4000000000000002', 'Declined (Funds)')" class="preset-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 hover:border-slate-700 text-left transition">
+                            <button type="button" onclick="setCardPreset('4000000000000002', 'Declined (Funds)')"
+                                class="preset-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 hover:border-slate-700 text-left transition">
                                 <div class="font-semibold text-slate-200 flex items-center justify-between">
                                     <span>•••• 0002</span>
-                                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono">Decline</span>
+                                    <span
+                                        class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono">Decline</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">Insufficient Funds</div>
                             </button>
 
-                            <button type="button" onclick="setCardPreset('4000000000000005', 'Fraud Rejection')" class="preset-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 hover:border-slate-700 text-left transition">
+                            <button type="button" onclick="setCardPreset('4000000000000005', 'Fraud Rejection')"
+                                class="preset-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 hover:border-slate-700 text-left transition">
                                 <div class="font-semibold text-slate-200 flex items-center justify-between">
                                     <span>•••• 0005</span>
-                                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono">Block</span>
+                                    <span
+                                        class="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono">Block</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">Do Not Honor</div>
                             </button>
 
-                            <button type="button" onclick="setCardPreset('4000000000000001', 'Expired Card')" class="preset-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 hover:border-slate-700 text-left transition">
+                            <button type="button" onclick="setCardPreset('4000000000000001', 'Expired Card')"
+                                class="preset-btn p-2.5 rounded-xl border border-slate-800 bg-slate-950 hover:border-slate-700 text-left transition">
                                 <div class="font-semibold text-slate-200 flex items-center justify-between">
                                     <span>•••• 0001</span>
-                                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-mono">Expired</span>
+                                    <span
+                                        class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-mono">Expired</span>
                                 </div>
                                 <div class="text-[10px] text-slate-400 mt-0.5">Card Expired</div>
                             </button>
@@ -129,26 +171,38 @@
                     </div>
 
                     <!-- Automated SDK Reliability Protection Banner -->
-                    <div class="p-3 rounded-xl bg-slate-950 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
+                    <div
+                        class="p-3 rounded-xl bg-slate-950 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
                         <div class="flex items-center justify-between text-slate-300 font-medium">
                             <span class="flex items-center space-x-1.5">
-                                <svg class="w-3.5 h-3.5 text-indigo-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5C2.056 5.649 2 6.319 2 7c0 5.225 3.34 9.67 8 11.317C14.66 16.67 18 12.225 18 7c0-.682-.057-1.35-.166-2.001A11.954 11.954 0 0110 1.944zM11 14a1 1 0 11-2 0 1 1 0 012 0zm0-7a1 1 0 10-2 0v3a1 1 0 102 0V7z" clip-rule="evenodd"/></svg>
+                                <svg class="w-3.5 h-3.5 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd"
+                                        d="M10 1.944A11.954 11.954 0 012.166 5C2.056 5.649 2 6.319 2 7c0 5.225 3.34 9.67 8 11.317C14.66 16.67 18 12.225 18 7c0-.682-.057-1.35-.166-2.001A11.954 11.954 0 0110 1.944zM11 14a1 1 0 11-2 0 1 1 0 012 0zm0-7a1 1 0 10-2 0v3a1 1 0 102 0V7z"
+                                        clip-rule="evenodd" />
+                                </svg>
                                 <span>Zero-Double-Charge Shield</span>
                             </span>
                             <span class="text-[10px] font-mono text-emerald-400">ACTIVE</span>
                         </div>
                         <p class="text-[10px] text-slate-500 leading-relaxed">
-                            Client SDK attaches cryptographic request tokens automatically. Double-clicks and network drops replay cached receipts with zero financial duplication.
+                            Client SDK attaches cryptographic request tokens automatically. Double-clicks and network
+                            drops replay cached receipts with zero financial duplication.
                         </p>
                     </div>
 
                     <!-- Primary Actions -->
                     <div class="pt-1 space-y-2">
-                        <button type="submit" id="btn-submit" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-semibold text-xs tracking-wide transition shadow-lg shadow-indigo-600/25 flex items-center justify-center space-x-2">
+                        <button type="submit" id="btn-submit"
+                            class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-semibold text-xs tracking-wide transition shadow-lg shadow-indigo-600/25 flex items-center justify-center space-x-2">
                             <span>Authorize & Settle Charge</span>
                         </button>
-                        <button type="button" onclick="simulatePacketStorm()" id="btn-stress" class="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700/80 active:scale-[0.99] text-slate-200 border border-slate-700/70 font-semibold text-xs transition flex items-center justify-center space-x-2">
-                            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        <button type="button" onclick="simulatePacketStorm()" id="btn-stress"
+                            class="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700/80 active:scale-[0.99] text-slate-200 border border-slate-700/70 font-semibold text-xs transition flex items-center justify-center space-x-2">
+                            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
                             <span>Simulate 5x Network Packet Storm</span>
                         </button>
                     </div>
@@ -156,11 +210,13 @@
 
                 <!-- Technical Wire-Trace Collapsible Drawer -->
                 <div class="mt-4 pt-3 border-t border-slate-800/80">
-                    <button type="button" onclick="toggleTraceDrawer()" class="w-full flex items-center justify-between text-[11px] text-slate-400 hover:text-slate-200 font-mono transition">
+                    <button type="button" onclick="toggleTraceDrawer()"
+                        class="w-full flex items-center justify-between text-[11px] text-slate-400 hover:text-slate-200 font-mono transition">
                         <span>Wire Trace & Cryptographic Tokens</span>
                         <span id="trace-toggle-arrow">▼</span>
                     </button>
-                    <div id="trace-drawer" class="mt-2.5 p-3 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[10px] space-y-1.5 hidden">
+                    <div id="trace-drawer"
+                        class="mt-2.5 p-3 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[10px] space-y-1.5 hidden">
                         <div class="text-slate-500">Current Ingress Token:</div>
                         <div id="current-token" class="text-indigo-400 font-semibold break-all">Generating...</div>
                         <div class="text-slate-500 mt-2">Ingress Fingerprint:</div>
@@ -170,12 +226,15 @@
             </div>
 
             <!-- Activity & Protocol Logs -->
-            <div class="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex-1 flex flex-col min-h-[220px]">
+            <div
+                class="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex-1 flex flex-col min-h-[220px]">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Transaction Event Log</h3>
-                    <button onclick="clearLogs()" class="text-[10px] text-slate-500 hover:text-slate-400 font-mono">Clear</button>
+                    <button onclick="clearLogs()"
+                        class="text-[10px] text-slate-500 hover:text-slate-400 font-mono">Clear</button>
                 </div>
-                <div id="audit-logs" class="custom-scrollbar flex-1 overflow-y-auto space-y-2 text-xs font-mono max-h-[260px] pr-1">
+                <div id="audit-logs"
+                    class="custom-scrollbar flex-1 overflow-y-auto space-y-2 text-xs font-mono max-h-[260px] pr-1">
                     <div class="text-slate-600 text-xs italic">System initialized. Awaiting transactions...</div>
                 </div>
             </div>
@@ -189,9 +248,11 @@
                 <div class="flex items-center justify-between pb-3.5 border-b border-slate-800/80 mb-4">
                     <div class="flex items-center space-x-2">
                         <div class="h-2 w-2 rounded-full bg-emerald-400"></div>
-                        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Financial Ledger Vault</h2>
+                        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Financial Ledger Vault
+                        </h2>
                     </div>
-                    <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 font-mono text-slate-400">Derived Balances</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 font-mono text-slate-400">Derived
+                        Balances</span>
                 </div>
 
                 <div class="space-y-3">
@@ -199,11 +260,12 @@
                     <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80">
                         <div class="flex items-center justify-between text-xs">
                             <span class="text-slate-400 font-medium">Customer Cash (In Transit)</span>
-                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono font-semibold">ASSET</span>
+                            <span
+                                class="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono font-semibold">ASSET</span>
                         </div>
                         <div class="mt-1 flex items-baseline justify-between">
                             <span id="bal-asset" class="text-2xl font-extrabold font-mono text-white">$0.00</span>
-                            <span class="text-[10px] text-slate-500 font-mono">acc_customer_cash</span>
+                            <span class="text-[10px] text-slate-500 font-mono">acc_customer_cash_usd</span>
                         </div>
                     </div>
 
@@ -211,11 +273,13 @@
                     <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80">
                         <div class="flex items-center justify-between text-xs">
                             <span class="text-slate-400 font-medium">Merchant Settlement Payable</span>
-                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-mono font-semibold">LIABILITY</span>
+                            <span
+                                class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-mono font-semibold">LIABILITY</span>
                         </div>
                         <div class="mt-1 flex items-baseline justify-between">
-                            <span id="bal-liability" class="text-2xl font-extrabold font-mono text-amber-400">$0.00</span>
-                            <span class="text-[10px] text-slate-500 font-mono">acc_merchant_pending</span>
+                            <span id="bal-liability"
+                                class="text-2xl font-extrabold font-mono text-amber-400">$0.00</span>
+                            <span class="text-[10px] text-slate-500 font-mono">acc_mercmerch_default_usd</span>
                         </div>
                     </div>
 
@@ -223,11 +287,13 @@
                     <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80">
                         <div class="flex items-center justify-between text-xs">
                             <span class="text-slate-400 font-medium">Platform Processing Revenue (2%)</span>
-                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-semibold">REVENUE</span>
+                            <span
+                                class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-semibold">REVENUE</span>
                         </div>
                         <div class="mt-1 flex items-baseline justify-between">
-                            <span id="bal-revenue" class="text-2xl font-extrabold font-mono text-emerald-400">$0.00</span>
-                            <span class="text-[10px] text-slate-500 font-mono">acc_platform_fees</span>
+                            <span id="bal-revenue"
+                                class="text-2xl font-extrabold font-mono text-emerald-400">$0.00</span>
+                            <span class="text-[10px] text-slate-500 font-mono">acc_platform_fees_usd</span>
                         </div>
                     </div>
                 </div>
@@ -239,7 +305,8 @@
                         <span id="math-proof" class="text-emerald-400 font-semibold">$0 = $0 + $0</span>
                     </div>
                     <div class="text-[10px] text-slate-400 leading-normal">
-                        Every transaction atomically writes balanced Debit and Credit journal postings. Balances cannot be manipulated via mutable edits.
+                        Every transaction atomically writes balanced Debit and Credit journal postings. Balances cannot
+                        be manipulated via mutable edits.
                     </div>
                 </div>
             </div>
@@ -250,7 +317,8 @@
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Journal Postings Audit</h3>
                     <span id="postings-count" class="text-[10px] text-slate-500 font-mono">0 postings</span>
                 </div>
-                <div id="journal-postings-list" class="custom-scrollbar flex-1 overflow-y-auto space-y-2 max-h-[300px] pr-1">
+                <div id="journal-postings-list"
+                    class="custom-scrollbar flex-1 overflow-y-auto space-y-2 max-h-[300px] pr-1">
                     <div class="text-slate-600 text-xs italic">No journal entries recorded.</div>
                 </div>
             </div>
@@ -277,7 +345,8 @@
     </main>
 
     <!-- Footer -->
-    <footer class="border-t border-slate-900 bg-slate-950 px-6 py-2.5 text-center text-[11px] text-slate-500 font-mono flex items-center justify-between">
+    <footer
+        class="border-t border-slate-900 bg-slate-950 px-6 py-2.5 text-center text-[11px] text-slate-500 font-mono flex items-center justify-between">
         <span>Payment Gateway Engine v1.0.0</span>
         <span>ACID-Compliant • Atomic Idempotency Locks • Double-Entry Settlement</span>
     </footer>
@@ -464,13 +533,17 @@
                 // Fetch Balances
                 const fetchSafe = (url) => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
 
+
+
                 const [cash, merchant, fees, recon, payments] = await Promise.all([
-                    fetchSafe(`${API_HOST}/v1/ledger/accounts/acc_customer_cash/balance`),
-                    fetchSafe(`${API_HOST}/v1/ledger/accounts/acc_merchant_pending/balance`),
-                    fetchSafe(`${API_HOST}/v1/ledger/accounts/acc_platform_fees/balance`),
-                    fetchSafe(`${API_HOST}/v1/ledger/reconciliation`),
+                    fetchSafe(`${API_HOST}/v1/ledger/accounts/acc_customer_cash_usd/balance`),
+                    fetchSafe(`${API_HOST}/v1/ledger/accounts/acc_merchant_merch_default_usd/balance`),
+                    fetchSafe(`${API_HOST}/v1/ledger/accounts/acc_platform_fees_usd/balance`),
+                    fetchSafe(`${API_HOST}/v1/ledger/reconciliation?currency=usd`),
                     fetchSafe(`${API_HOST}/v1/payments`)
                 ]);
+
+
 
                 // Update Balances
                 if (cash) document.getElementById('bal-asset').innerText = formatUSD(cash.settled_balance);
@@ -592,4 +665,5 @@
         };
     </script>
 </body>
+
 </html>

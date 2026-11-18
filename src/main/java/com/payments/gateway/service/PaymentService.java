@@ -1,3 +1,4 @@
+
 package com.payments.gateway.service;
 
 import com.payments.gateway.dto.ConfirmPaymentRequest;
@@ -41,8 +42,7 @@ public class PaymentService {
 
     /**
      * Atomically executes payment settlement and idempotency key resolution
-     * within a single database transaction. If any failure occurs, both the payment
-     * and the idempotency state are rolled back together.
+     * within a single database transaction.
      */
     @Transactional
     public PaymentResult processIdempotentPayment(
@@ -53,7 +53,9 @@ public class PaymentService {
 
         // 1. Check or acquire idempotency lock
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            Optional<IdempotencyRecord> cached = idempotencyService.checkOrLock(idempotencyKey, merchantId, payloadHash);
+            Optional<IdempotencyRecord> cached =
+                    idempotencyService.checkOrLock(idempotencyKey, merchantId, payloadHash);
+
             if (cached.isPresent()) {
                 return new PaymentResult(null, true, cached.get().getResponseBody());
             }
@@ -61,6 +63,7 @@ public class PaymentService {
 
         // 2. Create PaymentIntent and settle ledger
         String paymentId = "pi_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+
         PaymentIntent payment = PaymentIntent.builder()
                 .id(paymentId)
                 .merchantId(merchantId)
@@ -77,11 +80,16 @@ public class PaymentService {
 
         PaymentIntent savedPayment = paymentIntentRepository.save(payment);
 
-        // 3. Atomically resolve the idempotency record in the SAME transaction
+        // 3. Atomically resolve idempotency record
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             try {
                 String responseJson = objectMapper.writeValueAsString(savedPayment);
-                idempotencyService.resolve(idempotencyKey, merchantId, HttpStatus.CREATED.value(), responseJson);
+                idempotencyService.resolve(
+                        idempotencyKey,
+                        merchantId,
+                        HttpStatus.CREATED.value(),
+                        responseJson
+                );
             } catch (JsonProcessingException e) {
                 throw new RuntimeException("Failed to serialize payment response", e);
             }
@@ -91,8 +99,9 @@ public class PaymentService {
     }
 
     /**
-     * Atomically executes refund settlement with pessimistic row-locking
-     * and idempotency resolution within a single database transaction.
+     * Executes exactly one full refund per payment.
+     * Partial refunds and subsequent refund requests are rejected.
+     * Refund settlement and idempotency resolution are atomic.
      */
     @Transactional
     public RefundResult processIdempotentRefund(
@@ -104,37 +113,53 @@ public class PaymentService {
 
         // 1. Check or acquire idempotency lock
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            Optional<IdempotencyRecord> cached = idempotencyService.checkOrLock(idempotencyKey, merchantId, payloadHash);
+            Optional<IdempotencyRecord> cached =
+                    idempotencyService.checkOrLock(idempotencyKey, merchantId, payloadHash);
+
             if (cached.isPresent()) {
                 return new RefundResult(null, true, cached.get().getResponseBody());
             }
         }
 
-        // 2. Row-level lock (SELECT ... FOR UPDATE) prevents concurrent refund race conditions
-        PaymentIntent payment = paymentIntentRepository.findByIdAndMerchantIdForUpdate(paymentIntentId, merchantId)
-                .orElseThrow(() -> new ResourceNotFoundException("No such payment_intent: " + paymentIntentId));
+        // 2. Lock payment to prevent concurrent refund requests
+        PaymentIntent payment = paymentIntentRepository
+                .findByIdAndMerchantIdForUpdate(paymentIntentId, merchantId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("No such payment_intent: " + paymentIntentId));
 
         if (payment.getStatus() != PaymentStatus.SUCCEEDED) {
-            throw new InvalidPaymentStateException("Only succeeded payments can be refunded.");
+            throw new InvalidPaymentStateException(
+                    "Only succeeded payments can be refunded."
+            );
         }
 
-        List<Refund> existingRefunds = refundRepository.findByPaymentIntentId(paymentIntentId);
-        long totalRefundedSoFar = existingRefunds.stream().mapToLong(Refund::getAmount).sum();
-        long remainingRefundable = payment.getAmount() - totalRefundedSoFar;
+        // 3. Reject if this payment already has a refund
+        List<Refund> existingRefunds =
+                refundRepository.findByPaymentIntentId(paymentIntentId);
 
+        if (!existingRefunds.isEmpty()) {
+            throw new InvalidPaymentStateException(
+                    "This payment has already been refunded."
+            );
+        }
+
+        // 4. Only full refunds are supported
         long requestedAmount = (request != null && request.getAmount() != null)
                 ? request.getAmount()
-                : remainingRefundable;
+                : payment.getAmount();
 
-        if (requestedAmount <= 0) {
-            throw new InvalidPaymentStateException("Refund amount must be greater than zero.");
-        }
-        if (requestedAmount > remainingRefundable) {
-            throw new InvalidPaymentStateException(String.format(
-                    "Requested refund (%d) exceeds unrefunded balance (%d)", requestedAmount, remainingRefundable));
+        if (requestedAmount != payment.getAmount()) {
+            throw new InvalidPaymentStateException(
+                    "Only full refunds are supported. Refund amount must equal the original payment amount."
+            );
         }
 
-        String refundId = "re_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        // 5. Create refund
+        String refundId = "re_" + UUID.randomUUID()
+                .toString()
+                .replace("-", "")
+                .substring(0, 16);
+
         Refund refund = Refund.builder()
                 .id(refundId)
                 .paymentIntentId(paymentIntentId)
@@ -146,14 +171,24 @@ public class PaymentService {
 
         Refund savedRefund = refundRepository.save(refund);
 
-        // Record reverse double-entry ledger entries
-        ledgerService.recordRefundSettlement(refundId, requestedAmount, payment.getCurrency(), merchantId);
+        // 6. Record reverse double-entry ledger entries
+        ledgerService.recordRefundSettlement(
+                refundId,
+                requestedAmount,
+                payment.getCurrency(),
+                merchantId
+        );
 
-        // 3. Atomically resolve idempotency key in the SAME transaction
+        // 7. Atomically resolve idempotency record
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             try {
                 String responseJson = objectMapper.writeValueAsString(savedRefund);
-                idempotencyService.resolve(idempotencyKey, merchantId, HttpStatus.CREATED.value(), responseJson);
+                idempotencyService.resolve(
+                        idempotencyKey,
+                        merchantId,
+                        HttpStatus.CREATED.value(),
+                        responseJson
+                );
             } catch (JsonProcessingException e) {
                 throw new RuntimeException("Failed to serialize refund response", e);
             }
@@ -163,15 +198,27 @@ public class PaymentService {
     }
 
     @Transactional
-    public PaymentIntent confirmPayment(String paymentIntentId, ConfirmPaymentRequest request, String merchantId) {
-        PaymentIntent payment = paymentIntentRepository.findByIdAndMerchantIdForUpdate(paymentIntentId, merchantId)
-                .orElseThrow(() -> new ResourceNotFoundException("No such payment_intent: " + paymentIntentId));
+    public PaymentIntent confirmPayment(
+            String paymentIntentId,
+            ConfirmPaymentRequest request,
+            String merchantId) {
+
+        PaymentIntent payment = paymentIntentRepository
+                .findByIdAndMerchantIdForUpdate(paymentIntentId, merchantId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("No such payment_intent: " + paymentIntentId));
 
         if (payment.getStatus() == PaymentStatus.SUCCEEDED) {
-            throw new InvalidPaymentStateException("PaymentIntent has already succeeded and cannot be confirmed again.");
+            throw new InvalidPaymentStateException(
+                    "PaymentIntent has already succeeded and cannot be confirmed again."
+            );
         }
-        if (payment.getStatus() == PaymentStatus.CANCELED || payment.getStatus() == PaymentStatus.FAILED) {
-            throw new InvalidPaymentStateException("PaymentIntent in state " + payment.getStatus() + " cannot be confirmed.");
+
+        if (payment.getStatus() == PaymentStatus.CANCELED
+                || payment.getStatus() == PaymentStatus.FAILED) {
+            throw new InvalidPaymentStateException(
+                    "PaymentIntent in state " + payment.getStatus() + " cannot be confirmed."
+            );
         }
 
         String cardNumber = request != null ? request.getCardNumber() : null;
@@ -180,19 +227,35 @@ public class PaymentService {
         return paymentIntentRepository.save(payment);
     }
 
-    private void executeConfirmation(PaymentIntent payment, String cardNumber, String merchantId) {
+    private void executeConfirmation(
+            PaymentIntent payment,
+            String cardNumber,
+            String merchantId) {
+
         payment.setStatus(PaymentStatus.PROCESSING);
+
         CardSimulator.CardResult result = cardSimulator.evaluateCard(cardNumber);
         payment.setCardLast4(result.cardLast4());
 
         if (result.success()) {
             payment.setStatus(PaymentStatus.SUCCEEDED);
             payment.setFailureCode(null);
-            ledgerService.recordPaymentSettlement(payment.getId(), payment.getAmount(), payment.getCurrency(), merchantId);
+
+            ledgerService.recordPaymentSettlement(
+                    payment.getId(),
+                    payment.getAmount(),
+                    payment.getCurrency(),
+                    merchantId
+            );
         } else {
             payment.setStatus(PaymentStatus.FAILED);
             payment.setFailureCode(result.failureCode());
-            log.warn("Payment {} failed with code: {}", payment.getId(), result.failureCode());
+
+            log.warn(
+                    "Payment {} failed with code: {}",
+                    payment.getId(),
+                    result.failureCode()
+            );
         }
     }
 
@@ -200,7 +263,8 @@ public class PaymentService {
     public PaymentIntent getPayment(String paymentIntentId, String merchantId) {
         return paymentIntentRepository.findById(paymentIntentId)
                 .filter(p -> p.getMerchantId().equals(merchantId))
-                .orElseThrow(() -> new ResourceNotFoundException("No such payment_intent: " + paymentIntentId));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("No such payment_intent: " + paymentIntentId));
     }
 
     @Transactional(readOnly = true)

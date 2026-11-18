@@ -268,12 +268,13 @@ void testConcurrentIdempotencyStorm() throws Exception {
 }
 
 
-    @Test
-    @DisplayName("Positive & Negative: Partial and full refund lifecycle with balance constraints")
-    void testFullAndPartialRefundLifecycle() throws Exception {
-        // 1. Create and confirm a $100.00 payment
+        @Test
+        @DisplayName("Refund: Only one refund is allowed per payment")
+        void testOnlyOneRefundPerPayment() throws Exception {
+
+        // Create and confirm a $100 payment
         CreatePaymentRequest createReq = CreatePaymentRequest.builder()
-                .amount(10000L) // $100.00
+                .amount(10000L)
                 .currency("usd")
                 .cardNumber("4242424242424242")
                 .confirm(true)
@@ -285,39 +286,33 @@ void testConcurrentIdempotencyStorm() throws Exception {
                 .andExpect(status().isCreated())
                 .andReturn();
 
-        PaymentIntent payment = objectMapper.readValue(createRes.getResponse().getContentAsString(), PaymentIntent.class);
+        PaymentIntent payment = objectMapper.readValue(
+                createRes.getResponse().getContentAsString(),
+                PaymentIntent.class
+        );
 
-        // 2. Partial Refund #1: Refund $40.00
-        RefundRequest refund1 = new RefundRequest(4000L);
+        // First refund: $40 — succeeds
         mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(refund1)))
+                        .content(objectMapper.writeValueAsString(new RefundRequest(4000L))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.amount").value(4000))
                 .andExpect(jsonPath("$.status").value("succeeded"));
 
-        // 3. Negative: Over-refund (attempt to refund $70 when only $60 remains) -> 422
-        RefundRequest overRefund = new RefundRequest(7000L);
+        // Second refund: $60 — rejected, even though $60 remains
         mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(overRefund)))
+                        .content(objectMapper.writeValueAsString(new RefundRequest(6000L))))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.error.code").value("invalid_state_transition"));
+                .andExpect(jsonPath("$.error.message")
+                        .value("This payment has already been refunded."));
 
-        // 4. Partial Refund #2: Refund remaining $60.00 -> 201
-        RefundRequest refund2 = new RefundRequest(6000L);
+        // Third refund: also rejected
         mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(refund2)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.amount").value(6000));
-
-        // 5. Negative: Attempt refund when completely refunded ($0 remaining) -> 422
-        mockMvc.perform(post("/v1/payments/" + payment.getId() + "/refunds")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefundRequest(100L))))
+                        .content(objectMapper.writeValueAsString(new RefundRequest(1000L))))
                 .andExpect(status().isUnprocessableEntity());
-    }
+        }
 
     @Test
     @DisplayName("Negative: Refunding a failed payment is rejected with 422")
