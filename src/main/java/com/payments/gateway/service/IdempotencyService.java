@@ -109,4 +109,32 @@ public class IdempotencyService {
         });
     }
 
+    @Transactional(readOnly = true)
+public Optional<String> findResolvedResponse(
+        String key,
+        String merchantId,
+        String payloadHash
+) {
+    if (key == null || key.isBlank()) {
+        return Optional.empty();
+    }
+
+    return idempotencyRepository
+            .findByKeyAndMerchantId(key, merchantId)
+            .map(record -> {
+                if (!record.getRequestHash().equals(payloadHash)) {
+                    throw new IdempotencyConflictException(
+                            "Idempotency key was previously used with a different request payload."
+                    );
+                }
+
+                if (record.getStatus() == IdempotencyStatus.RESOLVED) {
+                    return record.getResponseBody();
+                }
+
+                return null;
+            });
+}
+
+
 }

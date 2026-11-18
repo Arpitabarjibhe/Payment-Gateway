@@ -1,8 +1,10 @@
+
 package com.payments.gateway.controller;
 
 import com.payments.gateway.dto.ConfirmPaymentRequest;
 import com.payments.gateway.dto.CreatePaymentRequest;
 import com.payments.gateway.dto.RefundRequest;
+import com.payments.gateway.exception.ConcurrentRequestException;
 import com.payments.gateway.model.PaymentIntent;
 import com.payments.gateway.service.IdempotencyService;
 import com.payments.gateway.service.PaymentService;
@@ -16,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/v1/payments")
@@ -43,8 +46,27 @@ public class PaymentController {
 
         String payloadHash = computeRequestHash(request);
 
-        // Single atomic transaction: payment settlement + idempotency resolution commit together
-        PaymentService.PaymentResult result = paymentService.processIdempotentPayment(request, merchantId, idempotencyKey, payloadHash);
+        PaymentService.PaymentResult result;
+
+        try {
+            result = paymentService.processIdempotentPayment(
+                    request, merchantId, idempotencyKey, payloadHash
+            );
+        } catch (ConcurrentRequestException ex) {
+
+            Optional<String> cached = idempotencyService.findResolvedResponse(
+                    idempotencyKey, merchantId, payloadHash
+            );
+
+            if (cached.isEmpty()) {
+                throw ex;
+            }
+
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .header("Idempotent-Replayed", "true")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(cached.get());
+        }
 
         if (result.isReplayed()) {
             return ResponseEntity.status(HttpStatus.CREATED)
@@ -85,10 +107,30 @@ public class PaymentController {
             @RequestHeader(value = "X-Merchant-Id", required = false, defaultValue = DEFAULT_MERCHANT) String merchantId) {
 
         String payloadHash = computeRequestHash(
-            new RefundIdempotencyPayload("refund", id, request)
+                new RefundIdempotencyPayload("refund", id, request)
         );
 
-        PaymentService.RefundResult result = paymentService.processIdempotentRefund(id, request, merchantId, idempotencyKey, payloadHash);
+        PaymentService.RefundResult result;
+
+        try {
+            result = paymentService.processIdempotentRefund(
+                    id, request, merchantId, idempotencyKey, payloadHash
+            );
+        } catch (ConcurrentRequestException ex) {
+
+            Optional<String> cached = idempotencyService.findResolvedResponse(
+                    idempotencyKey, merchantId, payloadHash
+            );
+
+            if (cached.isEmpty()) {
+                throw ex;
+            }
+
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .header("Idempotent-Replayed", "true")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(cached.get());
+        }
 
         if (result.isReplayed()) {
             return ResponseEntity.status(HttpStatus.CREATED)
@@ -102,9 +144,13 @@ public class PaymentController {
 
     private String computeRequestHash(Object request) {
         try {
-            return idempotencyService.computePayloadHash(objectMapper.writeValueAsString(request));
+            return idempotencyService.computePayloadHash(
+                    objectMapper.writeValueAsString(request)
+            );
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize request for idempotency hashing", e);
+            throw new IllegalStateException(
+                    "Failed to serialize request for idempotency hashing", e
+            );
         }
     }
 }
