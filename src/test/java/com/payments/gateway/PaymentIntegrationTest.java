@@ -176,67 +176,97 @@ public class PaymentIntegrationTest {
                 .andExpect(jsonPath("$.failure_code").value("insufficient_funds"));
     }
 
-    @Test
-    @DisplayName("Concurrency Stress: 10 parallel threads with same Idempotency-Key execute exactly 1 charge")
-    void testConcurrentIdempotencyStorm() throws Exception {
-        int threads = 10;
-        String sharedKey = "storm_key_" + System.currentTimeMillis();
-        ExecutorService executor = Executors.newFixedThreadPool(threads);
-        CountDownLatch latch = new CountDownLatch(1);
-        CountDownLatch doneLatch = new CountDownLatch(threads);
+    
+@Test
+@DisplayName("Concurrency Stress: 10 parallel requests with same Idempotency-Key return one payment and nine replays")
+void testConcurrentIdempotencyStorm() throws Exception {
+    int threads = 10;
+    String sharedKey = "storm_key_" + System.currentTimeMillis();
 
-        CreatePaymentRequest request = CreatePaymentRequest.builder()
-                .amount(1500L)
-                .currency("usd")
-                .cardNumber("4242424242424242")
-                .confirm(true)
-                .build();
-        String payload = objectMapper.writeValueAsString(request);
+    ExecutorService executor = Executors.newFixedThreadPool(threads);
+    CountDownLatch latch = new CountDownLatch(1);
+    CountDownLatch doneLatch = new CountDownLatch(threads);
 
-        AtomicInteger successOrReplayedCount = new AtomicInteger(0);
-        AtomicInteger conflictCount = new AtomicInteger(0);
-        List<String> createdPaymentIds = Collections.synchronizedList(new ArrayList<>());
+    CreatePaymentRequest request = CreatePaymentRequest.builder()
+            .amount(1500L)
+            .currency("usd")
+            .cardNumber("4242424242424242")
+            .confirm(true)
+            .build();
 
-        for (int i = 0; i < threads; i++) {
-            executor.submit(() -> {
-                try {
-                    latch.await(); // Synchronize all threads to fire simultaneously
-                    MvcResult res = mockMvc.perform(post("/v1/payments")
-                                    .header("Idempotency-Key", sharedKey)
-                                    .contentType(MediaType.APPLICATION_JSON)
-                                    .content(payload))
-                            .andReturn();
+    String payload = objectMapper.writeValueAsString(request);
 
-                    int status = res.getResponse().getStatus();
-                    if (status == 201) {
-                        successOrReplayedCount.incrementAndGet();
-                        PaymentIntent p = objectMapper.readValue(res.getResponse().getContentAsString(), PaymentIntent.class);
-                        createdPaymentIds.add(p.getId());
-                    } else if (status == 409) {
-                        conflictCount.incrementAndGet();
-                    }
-                } catch (Exception e) {
-                    // Ignored in concurrency test
-                } finally {
-                    doneLatch.countDown();
-                }
-            });
-        }
+    List<MvcResult> results = Collections.synchronizedList(new ArrayList<>());
+    List<Exception> failures = Collections.synchronizedList(new ArrayList<>());
 
-        latch.countDown(); // Trigger all threads
-        doneLatch.await();
-        executor.shutdown();
+    for (int i = 0; i < threads; i++) {
+        executor.submit(() -> {
+            try {
+                latch.await();
 
-        // Exactly one unique payment ID must have been created across all threads
-        assertThat(createdPaymentIds).isNotEmpty();
-        String canonicalId = createdPaymentIds.get(0);
-        for (String id : createdPaymentIds) {
-            assertThat(id).isEqualTo(canonicalId);
-        }
+                MvcResult result = mockMvc.perform(post("/v1/payments")
+                                .header("Idempotency-Key", sharedKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(payload))
+                        .andReturn();
 
-        // Total successful/replayed + 409 in-flight collisions equals total attempts
-        assertThat(successOrReplayedCount.get() + conflictCount.get()).isEqualTo(threads);
+                results.add(result);
+
+            } catch (Exception e) {
+                failures.add(e);
+            } finally {
+                doneLatch.countDown();
+            }
+        });
     }
+
+    latch.countDown();
+    doneLatch.await();
+    executor.shutdown();
+
+    // Every request must complete without an exception.
+    assertThat(failures).isEmpty();
+    assertThat(results).hasSize(threads);
+
+    int primaryCount = 0;
+    int replayCount = 0;
+    List<String> paymentIds = new ArrayList<>();
+
+    for (MvcResult result : results) {
+        assertThat(result.getResponse().getStatus()).isEqualTo(201);
+
+        boolean isReplayed = "true".equals(
+                result.getResponse().getHeader("Idempotent-Replayed")
+        );
+
+        if (isReplayed) {
+            replayCount++;
+        } else {
+            primaryCount++;
+        }
+
+        PaymentIntent payment = objectMapper.readValue(
+                result.getResponse().getContentAsString(),
+                PaymentIntent.class
+        );
+
+        paymentIds.add(payment.getId());
+    }
+
+    // Exactly one original execution and nine successful replays.
+    assertThat(primaryCount).isEqualTo(1);
+    assertThat(replayCount).isEqualTo(9);
+
+    // All ten responses must contain the same payment ID.
+    assertThat(paymentIds).hasSize(10);
+    assertThat(paymentIds.stream().distinct()).hasSize(1);
+
+    // Exactly one payment should exist for this idempotency key.
+    assertThat(idempotencyRepository
+            .findByKeyAndMerchantId(sharedKey, "merch_default"))
+            .isPresent();
+}
+
 
     @Test
     @DisplayName("Positive & Negative: Partial and full refund lifecycle with balance constraints")
