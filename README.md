@@ -1,280 +1,112 @@
-# Payment Gateway & Transaction Settlement Engine
+# Payment Gateway & Transaction Ledger
 
 [![CI](https://github.com/Arpitabarjibhe/Payment-Gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Arpitabarjibhe/Payment-Gateway/actions/workflows/ci.yml)
 
-A deterministic financial transaction processing gateway and double-entry ledger engine built with **Java 21** and **Spring Boot 3**.
+A backend payment processing system built with **Java 21, Spring Boot 3, and PostgreSQL**, featuring idempotent payment execution, concurrency-safe refunds, and an immutable double-entry ledger.
 
-Designed from first principles to address core distributed systems challenges in payments: network retry duplication, concurrent refund race conditions, and ledger reconciliation invariants.
+## Features
 
-**Live demo:** TODO-add-url-after-deploy
+- **Idempotent Payments:** SHA-256 request fingerprinting, cached response replay, and payload conflict detection.
+- **Multi-Merchant Isolation:** Idempotency keys are scoped by merchant to prevent cross-merchant collisions.
+- **Concurrency-Safe Processing:** Transactional execution and database row-level locking prevent duplicate payments and concurrent over-refunds.
+- **Double-Entry Ledger:** Immutable debit/credit journal entries with automatic balance calculation and reconciliation.
+- **Payment Simulation:** Deterministic card simulator for successful and declined transactions.
+- **Interactive Dashboard:** Simulate payments, concurrent request bursts, refunds, and inspect ledger entries in real time.
 
----
+## Tech Stack
 
-## 1. What This Project Is About
+| Category | Technologies |
+|---|---|
+| Backend | Java 21, Spring Boot 3 |
+| Database | PostgreSQL 16, H2 |
+| Persistence | Spring Data JPA, Hibernate |
+| Testing | JUnit 5, Mockito, Testcontainers |
+| Build | Maven |
+| Deployment | Docker, Docker Compose |
+| CI | GitHub Actions |
 
-When moving money over HTTP, network failures are inevitable: a client sends a charge request, the server settles the payment, but the connection drops before the HTTP response reaches the client. If the client retries, a naive backend charges the customer a second time. Similarly, two concurrent refund requests on the same transaction can race and over-refund the original balance.
+## Architecture
+<img width="785" height="423" alt="image" src="https://github.com/user-attachments/assets/8190926f-65bc-4e9c-944b-e6d1f48cbb07" />
 
-This project implements:
-1. **Atomic Idempotent Execution:** Payment settlement and idempotency record resolution occur within the same database transaction boundary.
-2. **Pessimistic Concurrency Control:** Row-level locks (`SELECT ... FOR UPDATE`) serialize competing operations on transaction balances, preventing concurrent over-refunds.
-3. **Append-Only Double-Entry Ledger:** Balances are dynamically derived by summing immutable journal entries ($\sum \text{Debits} == \sum \text{Credits}$) rather than mutating in-place counter columns.
+Payment execution, ledger postings, and idempotency resolution are committed within a single database transaction.
 
----
+## Screenshots
 
-## 2. Core Features
+### Payment Dashboard
+<img width="1920" height="1063" alt="image" src="https://github.com/user-attachments/assets/9a73328e-0313-4e80-a595-97d56dc71a53" />
 
-* **Deterministic Request Fingerprinting:** Generates SHA-256 hashes of incoming request payloads. Replaying an identical payload returns the cached response with `Idempotent-Replayed: true`; reusing a key with altered parameters returns `400 Bad Request`.
-* **Multi-Tenant Isolation:** Idempotency keys are scoped by composite constraints `(merchant_id, idempotency_key)`, allowing independent tenants to safely use identical key sequences without collision.
-* **Concurrency-Safe Refunds:** Full and partial refunds enforce balance validation under row-level database locks, and natively support idempotency keys.
-* **Deterministic Card Network Simulator:** Simulates bank processor responses based on card number suffixes (`4242` approved, `0002` insufficient funds, `0005` card declined, `0001` expired).
-* **Interactive Simulation Console:** A single-page dashboard at `http://localhost:8080` to simulate multi-threaded packet storms, test card decline paths, inspect live ledger postings, and audit system reconciliation in real time.
-  
-  Screenshot: TODO
+### Concurrent Request Simulation
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/58b0e975-a405-4feb-9093-882669fea920" />
 
----
+### Ledger & Reconciliation
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/d5d105f5-1bd1-4f39-8e3a-40a67e72c9f7" />
 
-## 3. Architecture & Data Flow
+## API Endpoints
 
-```
-[ Client / Terminal ]
-         │  HTTP POST /v1/payments
-         │  Headers: Idempotency-Key, X-Merchant-Id
-         ▼
-[ Ingress Controller ]
-         │
-         ├── 1. Compute SHA-256 Payload Hash
-         ▼
-[ Payment Service (@Transactional Single-Commit Boundary) ]
-         │
-         ├── 2. Pessimistic Lock Check on (merchant_id, idempotency_key)
-         │        ├── If RESOLVED: Return cached receipt immediately
-         │        └── If PROCESSING: Throw 409 Conflict
-         │
-         ├── 3. Card Network Simulation (Deterministic processor rules)
-         │
-         ├── 4. Double-Entry Ledger Postings:
-         │        • DEBIT  acc_customer_cash_{currency}    (Gross)
-         │        • CREDIT acc_merchant_{id}_{currency}    (Net)
-         │        • CREDIT acc_platform_fees_{currency}    (2% Fee)
-         │        • Invariant Check: Sum(Debits) == Sum(Credits)
-         │
-         └── 5. Resolve Idempotency Record (Status = RESOLVED)
-                  │
-         [ Single Atomic Database Commit ]
-                  │
-         (Payment + Ledger Entries + Idempotency Record commit together)
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/v1/payments` | Create and optionally confirm a payment |
+| GET | `/v1/payments` | List merchant payments |
+| GET | `/v1/payments/{id}` | Retrieve a payment |
+| POST | `/v1/payments/{id}/confirm` | Confirm a payment |
+| POST | `/v1/payments/{id}/refunds` | Issue a full refund |
+| GET | `/v1/ledger/accounts/{id}/balance` | Retrieve account balance |
+| GET | `/v1/ledger/entries?transaction_id={id}` | Inspect ledger entries |
+| GET | `/v1/ledger/reconciliation?currency=usd` | Verify global ledger balance |
 
----
+**Request headers:**
+- `Idempotency-Key`: Optional key for safe request retries.
+- `X-Merchant-Id`: Merchant identifier (defaults to `merch_default`).
 
-> **No lease/stale-lock mechanism is needed** because the idempotency record is inserted and resolved in the same transaction as the payment; a crash rolls back both. Concurrent duplicates serialize on the `(merchant_id, idempotency_key)` unique constraint and receive 409.
+## Running Locally
 
----
-
-## 4. Design Decisions & Trade-Offs
-
-### A. Single-Transaction Atomicity vs. Separate Lock Transactions
-* **Decision:** Payment execution, ledger entry creation, and idempotency status resolution execute within a single `@Transactional` boundary.
-* **Why:** In multi-step idempotency designs where the lock is acquired, the payment is committed, and the key is resolved in separate transactions, an application crash between steps leaves the payment committed but the key unresolved (or deleted by an error handler). A client retry then charges the customer again. In this design, either the payment, ledger postings, and resolved key commit together in a single atomic SQL commit, or the entire transaction rolls back.
-
-### B. Pessimistic Row Locking (`SELECT ... FOR UPDATE`) for Refunds
-* **Decision:** Refunds acquire a pessimistic write lock on the target `PaymentIntent` row before calculating the unrefunded balance.
-* **Trade-off:** Pessimistic locking introduces short transaction lock contention if multiple refunds are issued against the same payment simultaneously. However, payment refunds are low-frequency operations per transaction, and row locking guarantees mathematical safety against concurrent over-refund race conditions.
-
-### C. Integer Cents vs. Floating-Point Numbers
-* **Decision:** All monetary amounts are represented as 64-bit integers (`Long amount`) in the smallest currency unit (e.g. 5000 = $50.00).
-* **Why:** IEEE-754 floating-point arithmetic introduces precision loss and binary approximation errors (e.g. `0.1 + 0.2 = 0.30000000000000004`), which can cause cumulative ledger discrepancies over millions of transactions.
-
-### D. Derived Balances vs. Mutable In-Place Counters
-* **Decision:** Account balances are dynamically computed by aggregating historical journal entries (`Assets = Debits - Credits`; `Liabilities = Credits - Debits`).
-* **Trade-off:** Deriving balances on the fly requires aggregate database queries rather than simple single-row lookups. For a high-throughput production ledger, snapshots/checkpoints would be introduced periodically. The benefit is complete auditability and mathematical provability: balances cannot be secretly modified or corrupted by rogue `UPDATE` statements.
-
----
-
-## 5. Known Limitations & Production Roadmap
-
-To keep this project focused and self-contained, the following areas were deliberately scoped out and would be addressed in a full production migration:
-
-| Area | Current Implementation | Production Target |
-| :--- | :--- | :--- |
-| **Authentication** | No authentication — `X-Merchant-Id` is trusted (defaults to `merch_default`). | API Gateway with mTLS and cryptographically signed bearer tokens (`sk_live_...`). |
-| **Payment Confirmation** | `POST /v1/payments/{id}/confirm` has no idempotency-key support; confirmations must not be duplicated by the caller. | Add idempotency key support to the confirmation endpoint. |
-| **Payment Failure Retry** | A `FAILED` payment cannot be retried with a different card; a new `PaymentIntent` is required. | Multi-attempt payment intents allowing card resubmission while retaining the original intent ID. |
-| **Fee Refund Policy** | Refunds do not return the 2% platform fee; full amount is debited from merchant pending. | Configurable fee refund policies (prorated or full fee reversal). |
-| **Card Data Handling** | Mock card numbers evaluated locally. | Tokenization via client-side SDKs and PCI-DSS Level 1 compliant card vaults. |
-| **Database Migrations** | Hibernate schema generation (`update` / `create-drop`). | Versioned, repeatable Flyway or Liquibase SQL migrations. |
-| **Ledger Scaling** | Real-time SQL aggregation. | Periodic snapshot checkpoints to bound aggregation query times on active accounts. |
-| **Asynchronous Webhooks** | Synchronous REST responses. | Transactional Outbox pattern with HMAC signatures and exponential retry workers. |
-
----
-
-## 6. API Reference
-
-### 1. Authorize & Settle a Payment
+**Prerequisites:** Java 21 and Maven.
 
 ```bash
-POST /v1/payments
-Idempotency-Key: pay_req_1001
-X-Merchant-Id: merch_default
-Content-Type: application/json
+git clone https://github.com/Arpitabarjibhe/Payment-Gateway.git
 
-{
-  "amount": 5000,
-  "currency": "usd",
-  "card_number": "4242424242424242",
-  "confirm": true
-}
-```
+cd Payment-Gateway
 
-**Response (`201 Created`):**
-```json
-{
-  "id": "pi_8a12f9e420b94321",
-  "merchant_id": "merch_default",
-  "amount": 5000,
-  "currency": "usd",
-  "status": "SUCCEEDED",
-  "card_last4": "4242",
-  "failure_code": null,
-  "created_at": "2026-11-16T10:00:00Z",
-  "updated_at": "2026-11-16T10:00:00Z"
-}
-```
-
-*Submitting the exact same request with the same `Idempotency-Key` returns the cached response with the `Idempotent-Replayed: true` HTTP response header without re-executing the charge.*
-
----
-
-### 2. Issue a Partial or Full Refund
-
-```bash
-POST /v1/payments/{payment_id}/refunds
-Idempotency-Key: ref_req_2001
-X-Merchant-Id: merch_default
-Content-Type: application/json
-
-{
-  "amount": 2500
-}
-```
-
-**Response (`201 Created`):**
-```json
-{
-  "id": "re_c981b37a112091ea",
-  "payment_intent_id": "pi_8a12f9e420b94321",
-  "amount": 2500,
-  "currency": "usd",
-  "status": "succeeded",
-  "created_at": "2026-11-16T10:01:00Z"
-}
-```
-
----
-
-### 3. Query Account Balance
-
-```bash
-GET /v1/ledger/accounts/acc_merchant_merch_default_usd/balance
-```
-
-**Response (`200 OK`):**
-```json
-{
-  "account_id": "acc_merchant_merch_default_usd",
-  "account_name": "Merchant Pending Settlement (USD)",
-  "currency": "usd",
-  "account_type": "LIABILITY",
-  "total_debits": 2500,
-  "total_credits": 4900,
-  "settled_balance": 2400
-}
-```
-
----
-
-### 4. System Reconciliation Audit
-
-```bash
-GET /v1/ledger/reconciliation?currency=usd&merchant_id=merch_default
-```
-
-**Response (`200 OK`):**
-```json
-{
-  "is_balanced": true,
-  "currency": "usd",
-  "merchant_id": "merch_default",
-  "assets_customer_cash": 2500,
-  "liabilities_merchant_pending": 2400,
-  "revenue_platform_fees": 100,
-  "discrepancy": 0
-}
-```
-
----
-
-## 7. Deterministic Test Cards
-
-| Card Suffix | Simulated Outcome | Failure Code |
-| :--- | :--- | :--- |
-| `...4242` | Approved & Settles | `null` |
-| `...0002` | Declined | `insufficient_funds` |
-| `...0005` | Declined | `card_declined_do_not_honor` |
-| `...0001` | Declined | `expired_card` |
-
----
-
-## 8. Verification & Test Suite
-
-The test suite contains **38 automated tests** covering positive paths, edge cases, and concurrency:
-
-```bash
-mvn test
-```
-
-### Key Test Cases Verified:
-* **`testConcurrentIdempotencyStorm`:** Fires 10 concurrent threads against a single idempotency key simultaneously. Asserts that exactly 1 charge is created and 1 set of ledger postings is recorded.
-* **`testConcurrentRefundRaceProtection`:** Fires 2 concurrent threads attempting to refund \$50 each on a \$50 charge. Asserts that pessimistic row locks serialize execution so exactly 1 succeeds and the competing request is rejected with `422 Unprocessable Entity`.
-* **`testAtomicRollbackOnProcessingFailure`:** Simulates a processing failure after idempotency record insertion; asserts that the entire transaction rolls back (no idempotency, payment, or ledger rows remain) and a subsequent retry with the same key succeeds cleanly.
-* **`testConcurrentNewMerchantAccountCreation`:** Fires 10 concurrent threads creating first-time payments for a brand-new merchant simultaneously; asserts that ledger accounts are created safely via `REQUIRES_NEW` transactions without duplicate-key errors and the merchant's ledger balances.
-* **`testMultiMerchantIdempotencyIsolation`:** Asserts that Merchant A and Merchant B using identical keys (`shared_key_101`) do not collide and execute independently.
-* **`testIdempotencyPayloadConflict`:** Asserts that reusing a key with altered parameters returns `400 Bad Request`.
-* **`PostgresIntegrationTest`:** Dedicated Testcontainers suite validating PostgreSQL row locking, JSON replay on `TEXT` columns, and concurrent refund serialization against a live PostgreSQL 16 container.
-
-### Concurrency Testing: H2 vs. PostgreSQL (Testcontainers)
-Unit and baseline integration tests run against an in-memory H2 database in PostgreSQL compatibility mode for instant feedback during local development and non-Docker environments. Critical multi-threaded concurrency invariants—including concurrent idempotency storms (10 threads), concurrent refund races with pessimistic row locking (2 threads), PostgreSQL `TEXT` column JSON replay caching, and simultaneous first-ever merchant account creation—are verified against a real PostgreSQL 16 container via Testcontainers in CI.
-
----
-
-## 9. Deploying
-
-### Required Environment Variables
-
-| Variable | Description | Example |
-| :--- | :--- | :--- |
-| `DATABASE_URL` | JDBC URL of the PostgreSQL database | `jdbc:postgresql://host:5432/paymentdb` |
-| `DATABASE_USERNAME` | Database user | `payment_user` |
-| `DATABASE_PASSWORD` | Database password | *(secret)* |
-| `SPRING_PROFILES_ACTIVE` | Must be `prod` for production | `prod` |
-| `PORT` | (Optional) HTTP port; defaults to `8080` | `8080` |
-| `HIBERNATE_DDL_AUTO` | (Optional) Schema management; defaults to `update` | `validate` |
-
-> [!IMPORTANT]
-> Database migrations via Flyway are future work. Use `HIBERNATE_DDL_AUTO=update` or `create-drop` for now — do not use `validate` on a fresh database.
-
----
-
-## 10. Running Locally & Container Deployment
-
-### Local Development (Zero-Config In-Memory Database)
-```bash
 mvn spring-boot:run
 ```
-Open **`http://localhost:8080`** in your browser to access the simulation console.
 
-### Production Container Deployment (PostgreSQL)
+Open **http://localhost:8080** to access the interactive dashboard.
+
+The default local configuration uses an in-memory H2 database.
+
+### Docker Deployment
+
+Run the application with PostgreSQL 16:
+
 ```bash
 docker compose up -d --build
 ```
-This builds the multi-stage Alpine container and starts a healthy PostgreSQL 16 instance.
+
+The application starts on port `8080`.
+
+## Testing
+
+Run the automated test suite:
+
+```bash
+mvn clean test
+```
+
+**38 automated test cases** cover:
+
+- Payment creation, settlement, and failure scenarios.
+- Idempotency, response replay, and payload conflicts.
+- Concurrent payment requests and refund race conditions.
+- Double-entry ledger invariants and reconciliation.
+- Multi-merchant isolation and transaction rollback.
+- PostgreSQL integration and concurrency behavior using Testcontainers.
+
+GitHub Actions automatically runs the test suite on pushes and pull requests to `main` and `master`.
+
+## Design Scope
+
+This project uses simulated card processing and is intended as an engineering demonstration, not a production-ready payment processor. Authentication, real payment network integration, PCI-compliant card handling, and asynchronous webhooks are outside its current scope.
+
+---
+
+**Built with Java, Spring Boot, and PostgreSQL.**
